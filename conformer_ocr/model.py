@@ -125,7 +125,7 @@ class RecognitionModel(pl.LightningModule):
     def validation_step(self, batch, batch_idx):
         input = batch['image'].squeeze(1).transpose(1, 2)
         o, olens = self.encoder.forward(input, batch['seq_lens'])
-        o = self.fc.forward(o).cpu().float().numpy()
+        o = self.fc.forward(o).transpose(1, 2).cpu().float().numpy()
 
         dec_strs = []
         pred = []
