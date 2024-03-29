@@ -46,7 +46,7 @@ RECOGNITION_HYPER_PARAMS = {'pad': 16,
                             'decoder_hidden_dim': 512,
                             }
 
-def train_model(format_type, training_data, evaluation_data, config):
+def train_model(config, format_type, training_data, evaluation_data):
 
     from conformer_ocr.dataset import TextLineDataModule
     from conformer_ocr.model import RecognitionModel
