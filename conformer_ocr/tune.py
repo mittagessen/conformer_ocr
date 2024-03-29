@@ -122,7 +122,7 @@ run_config = RunConfig(
 
 # Define a TorchTrainer without hyper-parameters for Tuner
 ray_trainer = TorchTrainer(
-    train_func,
+    train_model,
     scaling_config=scaling_config,
     run_config=run_config,
 )
