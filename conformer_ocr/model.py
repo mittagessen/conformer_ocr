@@ -27,6 +27,7 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 from pytorch_lightning.callbacks import Callback, EarlyStopping
+from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 from torch.optim import lr_scheduler
 from torchmetrics.text import CharErrorRate, WordErrorRate
 
@@ -93,8 +94,12 @@ class RecognitionModel(pl.LightningModule):
                                                  conv_dropout_p=hyper_params['conv_dropout_p'],
                                                  conv_kernel_size=hyper_params['conv_kernel_size'],
                                                  half_step_residual=hyper_params['half_step_residual'])
-        self.fc = nn.Linear(hyper_params['encoder_dim'], num_classes, bias=False)
-        self.nn = nn.Sequential(self.encoder, self.fc)
+        self.decoder = nn.LSTM(hyper_params['encoder_dim'],
+                               hyper_params['decoder_hidden_dim'],
+                               bidirectional=True,
+                               batch_first=True)
+        self.fc = nn.Linear(2*hyper_params['decoder_hidden_dim'], num_classes, bias=False)
+        self.nn = nn.Sequential(self.encoder, self.decoder, self.fc)
 
         # loss
         self.criterion = nn.CTCLoss(reduction='sum', zero_infinity=True)
@@ -111,8 +116,11 @@ class RecognitionModel(pl.LightningModule):
         input = input.squeeze(1).transpose(1, 2)
         seq_lens, label_lens = batch['seq_lens'], batch['target_lens']
         encoder_outputs, encoder_lens = self.encoder(input, seq_lens)
-        decoder_outputs = self.fc(encoder_outputs)
-        logits = nn.functional.log_softmax(decoder_outputs, dim=-1)
+        padded_encoder_outputs = pack_padded_sequence(encoder_outputs, encoder_lens, batch_first=True, enforce_sorted=False)
+        decoder_outputs, _ = self.decoder(padded_encoder_outputs)
+        decoder_outputs, _ = pad_packed_sequence(decoder_outputs, batch_first=True)
+        probits = self.fc(decoder_outputs)
+        logits = nn.functional.log_softmax(probits, dim=-1)
 
         # NCW -> WNC
         loss = self.criterion(logits.transpose(0, 1),  # type: ignore
@@ -124,12 +132,16 @@ class RecognitionModel(pl.LightningModule):
 
     def validation_step(self, batch, batch_idx):
         input = batch['image'].squeeze(1).transpose(1, 2)
-        o, olens = self.encoder.forward(input, batch['seq_lens'])
-        o = self.fc.forward(o).transpose(1, 2).cpu().float().numpy()
+        seq_lens, label_lens = batch['seq_lens'], batch['target_lens']
+        encoder_outputs, encoder_lens = self.encoder(input, seq_lens)
+        padded_encoder_outputs = pack_padded_sequence(encoder_outputs, encoder_lens, batch_first=True, enforce_sorted=False)
+        decoder_outputs, _ = self.decoder(padded_encoder_outputs)
+        decoder_outputs, _ = pad_packed_sequence(decoder_outputs, batch_first=True)
+        o = self.fc.forward(decoder_outputs).transpose(1, 2).cpu().float().numpy()
 
         dec_strs = []
         pred = []
-        for seq, seq_len in zip(o, olens):
+        for seq, seq_len in zip(o, encoder_lens):
             locs = greedy_decoder(seq[:, :seq_len])
             pred.append(''.join(x[0] for x in self.trainer.datamodule.val_codec.decode(locs)))
         idx = 0
