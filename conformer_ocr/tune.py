@@ -61,9 +61,9 @@ RECOGNITION_HYPER_PARAMS = {'pad': 16,
                             }
 
 search_space = {
-    "warmup": tune.loguniform(0, 10000),
+    "warmup": tune.lograndint(1, 10000),
     "lr": tune.loguniform(1e-6, 1e-1),
-    "batch_size": tune.choice([1, 16]),
+    "batch_size": tune.choice([1, 2, 4, 8, 16]),
 }
 
 num_epochs = 30
