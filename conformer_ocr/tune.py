@@ -115,6 +115,8 @@ run_config = RunConfig(
         checkpoint_score_attribute="val_metric",
         checkpoint_score_order="max",
     ),
+    storage_path="/mnt/nfs_data/experiments/cocr",
+    name="cocr_tune",
 )
 
 # Define a TorchTrainer without hyper-parameters for Tuner
