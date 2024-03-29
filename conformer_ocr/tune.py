@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 from ray import tune
 from ray.tune.schedulers import ASHAScheduler
 
