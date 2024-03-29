@@ -92,7 +92,7 @@ def train_model(config, format_type, training_data, evaluation_data):
                       strategy=RayDDPStrategy())
 
     trainer = prepare_trainer(trainer)
-    with threadpool_limits(limits=threads):
+    with threadpool_limits(limits=1):
         trainer.fit(model, data_module)
 
 
