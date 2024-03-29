@@ -112,8 +112,8 @@ def train_model(format_type, training_data, evaluation_data, config):
               'containing the transcription. In binary mode files are datasets '
               'files containing pre-extracted text lines.')
 @click.argument('ground_truth', nargs=-1, callback=_expand_gt, type=click.Path(exists=False, dir_okay=False))
-def cli(ctx, verbose, seed, deterministic, output, epochs, samples, workers,
-        training_files, evaluation_files, format_type, ground_truth):
+def cli(ctx, seed, output, epochs, samples, workers, training_files,
+        evaluation_files, format_type, ground_truth):
 
     from ray import tune
     from ray.tune.schedulers import ASHAScheduler
