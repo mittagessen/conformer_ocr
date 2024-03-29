@@ -54,6 +54,12 @@ def train_model(config, format_type, training_data, evaluation_data):
     from pytorch_lightning import Trainer
     from threadpoolctl import threadpool_limits
 
+    from ray.train.lightning import (
+        RayLightningEnvironment,
+        RayTrainReportCallback,
+        prepare_trainer,
+    )
+
 
     hyper_params = RECOGNITION_HYPER_PARAMS.copy()
     hyper_params.update(config)
@@ -120,11 +126,6 @@ def cli(ctx, seed, output, epochs, samples, workers, training_files,
     from ray import tune
     from ray.tune.schedulers import ASHAScheduler
 
-    from ray.train.lightning import (
-        RayLightningEnvironment,
-        RayTrainReportCallback,
-        prepare_trainer,
-    )
     from ray.train import ScalingConfig
     from ray.train.torch import TorchTrainer
     from ray.train import RunConfig, ScalingConfig, CheckpointConfig
