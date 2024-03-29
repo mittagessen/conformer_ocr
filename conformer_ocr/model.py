@@ -116,9 +116,9 @@ class RecognitionModel(pl.LightningModule):
         input = input.squeeze(1).transpose(1, 2)
         seq_lens, label_lens = batch['seq_lens'], batch['target_lens']
         encoder_outputs, encoder_lens = self.encoder(input, seq_lens)
-        padded_encoder_outputs = pack_padded_sequence(encoder_outputs, encoder_lens, batch_first=True, enforce_sorted=False)
+        padded_encoder_outputs = pack_padded_sequence(encoder_outputs, encoder_lens.cpu(), batch_first=True, enforce_sorted=False)
         decoder_outputs, _ = self.decoder(padded_encoder_outputs)
-        decoder_outputs, _ = pad_packed_sequence(decoder_outputs, batch_first=True)
+        decoder_outputs, encoder_lens = pad_packed_sequence(decoder_outputs, batch_first=True)
         probits = self.fc(decoder_outputs)
         logits = nn.functional.log_softmax(probits, dim=-1)
 
@@ -134,9 +134,9 @@ class RecognitionModel(pl.LightningModule):
         input = batch['image'].squeeze(1).transpose(1, 2)
         seq_lens, label_lens = batch['seq_lens'], batch['target_lens']
         encoder_outputs, encoder_lens = self.encoder(input, seq_lens)
-        padded_encoder_outputs = pack_padded_sequence(encoder_outputs, encoder_lens, batch_first=True, enforce_sorted=False)
+        padded_encoder_outputs = pack_padded_sequence(encoder_outputs, encoder_lens.cpu(), batch_first=True, enforce_sorted=False)
         decoder_outputs, _ = self.decoder(padded_encoder_outputs)
-        decoder_outputs, _ = pad_packed_sequence(decoder_outputs, batch_first=True)
+        decoder_outputs, encoder_lens = pad_packed_sequence(decoder_outputs, batch_first=True)
         o = self.fc.forward(decoder_outputs).transpose(1, 2).cpu().float().numpy()
 
         dec_strs = []
