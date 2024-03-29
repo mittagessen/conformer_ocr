@@ -55,6 +55,7 @@ def train_model(config, format_type, training_data, evaluation_data):
     from threadpoolctl import threadpool_limits
 
     from ray.train.lightning import (
+        RayDDPStrategy,
         RayLightningEnvironment,
         RayTrainReportCallback,
         prepare_trainer,
@@ -87,7 +88,8 @@ def train_model(config, format_type, training_data, evaluation_data):
                       enable_model_summary=False,
                       enable_checkpointing=False,
                       callbacks=[RayTrainReportCallback()],
-                      plugins=[RayLightningEnvironment()])
+                      plugins=[RayLightningEnvironment()],
+                      strategy=RayDDPStrategy())
 
     trainer = prepare_trainer(trainer)
     with threadpool_limits(limits=threads):
