@@ -115,6 +115,8 @@ def train_model(format_type, training_data, evaluation_data, config):
 def cli(ctx, seed, output, epochs, samples, workers, training_files,
         evaluation_files, format_type, ground_truth):
 
+    from functools import partial
+
     from ray import tune
     from ray.tune.schedulers import ASHAScheduler
 
