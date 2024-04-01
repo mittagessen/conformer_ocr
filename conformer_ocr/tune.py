@@ -46,7 +46,10 @@ RECOGNITION_HYPER_PARAMS = {'pad': 16,
                             'decoder_hidden_dim': 512,
                             }
 
-def train_model(config, format_type, training_data, evaluation_data):
+def train_model(trial: 'optuna.trial.Trial',
+                format_type,
+                training_data,
+                evaluation_data) -> float:
 
     from conformer_ocr.dataset import TextLineDataModule
     from conformer_ocr.model import RecognitionModel
@@ -54,16 +57,15 @@ def train_model(config, format_type, training_data, evaluation_data):
     from pytorch_lightning import Trainer
     from threadpoolctl import threadpool_limits
 
-    from ray.train.lightning import (
-        RayDDPStrategy,
-        RayLightningEnvironment,
-        RayTrainReportCallback,
-        prepare_trainer,
-    )
-
+    from optuna.integration import PyTorchLightningPruningCallback
 
     hyper_params = RECOGNITION_HYPER_PARAMS.copy()
-    hyper_params.update(config)
+
+    hyper_params['warmup'] = trial.suggest_int('warmup', 1, 10000, log=True)
+    hyper_params['height'] = trial.suggest_int('height', 48, 128)
+    hyper_params['lr'] = trial.suggest_loguniform('lr', 1e-6, 1e-1)
+    batch_size = trial.suggest_categorical('batch_size', [1, 2, 4, 8, 16])
+    hyper_params['decoder_hidden_dim'] = trial.suggest_int('decoder_hidden_dim', 128, 512, log=True)
 
     data_module = TextLineDataModule(training_data=training_data,
                                      evaluation_data=evaluation_data,
@@ -71,7 +73,7 @@ def train_model(config, format_type, training_data, evaluation_data):
                                      height=hyper_params['height'],
                                      augmentation=hyper_params['augment'],
                                      partition=0.9,
-                                     batch_size=hyper_params['batch_size'],
+                                     batch_size=batch_size,
                                      num_workers=8,
                                      format_type=format_type)
 
@@ -79,21 +81,20 @@ def train_model(config, format_type, training_data, evaluation_data):
                              num_classes=data_module.num_classes,
                              batches_per_epoch=len(data_module.train_dataloader()))
 
-    trainer = Trainer(accelerator="auto",
-                      devices="auto",
+    trainer = Trainer(accelerator="gpu",
+                      devices=1,
                       precision=16,
                       max_epochs=hyper_params['epochs'],
                       min_epochs=hyper_params['min_epochs'],
                       enable_progress_bar=False,
                       enable_model_summary=False,
                       enable_checkpointing=False,
-                      callbacks=[RayTrainReportCallback()],
-                      plugins=[RayLightningEnvironment()],
-                      strategy=RayDDPStrategy())
+                      callbacks=[PyTorchLightningPruningCallback(trial, monitor="val_metric")])
 
-    trainer = prepare_trainer(trainer)
     with threadpool_limits(limits=1):
         trainer.fit(model, data_module)
+
+    return trainer.callback_metrics["val_metric"].item()
 
 
 @click.command()
@@ -102,10 +103,12 @@ def train_model(config, format_type, training_data, evaluation_data):
 @click.option('-s', '--seed', default=None, type=click.INT,
               help='Seed for numpy\'s and torch\'s RNG. Set to a fixed value to '
                    'ensure reproducible random splits of data')
-@click.option('-o', '--output', show_default=True, type=click.Path(), default='/mnt/nfs_data/experiments/cocr', help='Output directory for checkpoints')
+@click.option('-d', '--database', show_default=True, default='sqlite://cocr.db', help='optuna SQL database location')
+@click.option('-n', '--name', show_default=True, default=str(uuid.uuid4()), help='trial identifier')
 @click.option('-N', '--epochs', show_default=True, default=RECOGNITION_HYPER_PARAMS['epochs'], help='Number of epochs to train for')
 @click.option('-S', '--samples', show_default=True, default=25, help='Number of samples')
 @click.option('-w', '--workers', show_default=True, default=3, help='Number of ray tune workers')
+@click.option('--pruning/--no-pruning', show_default=True, default=True, help='Enables/disables trial pruning')
 @click.option('-t', '--training-files', show_default=True, default=None, multiple=True,
               callback=_validate_manifests, type=click.File(mode='r', lazy=True),
               help='File(s) with additional paths to training data')
@@ -120,29 +123,17 @@ def train_model(config, format_type, training_data, evaluation_data):
               'containing the transcription. In binary mode files are datasets '
               'files containing pre-extracted text lines.')
 @click.argument('ground_truth', nargs=-1, callback=_expand_gt, type=click.Path(exists=False, dir_okay=False))
-def cli(ctx, seed, output, epochs, samples, workers, training_files,
+def cli(ctx, seed, database, name, epochs, samples, workers, pruning, training_files,
         evaluation_files, format_type, ground_truth):
 
     from functools import partial
 
-    from ray import tune
-    from ray.tune.schedulers import ASHAScheduler
-
-    from ray.train import ScalingConfig
-    from ray.train.torch import TorchTrainer
-    from ray.train import RunConfig, ScalingConfig, CheckpointConfig
+    import optuna
+    from optuna.trial import TrialState
 
     if seed:
         from pytorch_lightning import seed_everything
         seed_everything(seed, workers=True)
-
-    search_space = {
-        "warmup": tune.lograndint(1, 10000),
-        "lr": tune.loguniform(1e-6, 1e-1),
-        "batch_size": tune.choice([1, 2, 4, 8, 16]),
-        'decoder_hidden_dim': tune.lograndint(128, 512),
-    }
-
 
     # disable automatic partition when given evaluation set explicitly
     if evaluation_files:
@@ -156,45 +147,24 @@ def cli(ctx, seed, output, epochs, samples, workers, training_files,
     if len(ground_truth) == 0:
         raise click.UsageError('No training data was provided to the train command. Use `-t` or the `ground_truth` argument.')
 
-    train_cocr = partial(train_model, format_type=format_type, training_data=ground_truth, evaluation_data=evaluation_files)
+    objective = partial(train_model, format_type=format_type, training_data=ground_truth, evaluation_data=evaluation_files)
 
-    scaling_config = ScalingConfig(
-        num_workers=workers, use_gpu=True, resources_per_worker={"CPU": 8, "GPU": 1}
-    )
+    pruner = optuna.pruners.MedianPruner() if pruning else optuna.pruners.NopPruner()
 
-    run_config = RunConfig(
-        checkpoint_config=CheckpointConfig(
-            num_to_keep=2,
-            checkpoint_score_attribute="val_metric",
-            checkpoint_score_order="max",
-        ),
-        storage_path=output,
-        name="cocr_tune",
-    )
+    print(f'database: {database} trial: {name}')
 
-    # Define a TorchTrainer without hyper-parameters for Tuner
-    ray_trainer = TorchTrainer(
-        train_cocr,
-        scaling_config=scaling_config,
-        run_config=run_config,
-    )
+    study = optuna.create_study(direction="maximize",
+                                pruner=pruner,
+                                study_name=name,
+                                storage=database)
+    study.optimize(objective, n_trials=samples, load_if_exists=True)
 
-    def tune_cocr_asha(num_samples=25, num_epochs=50):
-        scheduler = ASHAScheduler(max_t=num_epochs, grace_period=1, reduction_factor=2)
+    print("Number of finished trials: {}".format(len(study.trials)))
 
-        tuner = tune.Tuner(
-            ray_trainer,
-            param_space={"train_loop_config": search_space},
-            tune_config=tune.TuneConfig(
-                metric="val_metric",
-                mode="max",
-                num_samples=num_samples,
-                scheduler=scheduler,
-            ),
-        )
-        return tuner.fit()
+    print("Best trial:")
+    trial = study.best_trial
 
-    results = tune_cocr_asha(num_samples=samples, num_epochs=epochs)
+
 
 if __name__ == '__main__':
     cli()
