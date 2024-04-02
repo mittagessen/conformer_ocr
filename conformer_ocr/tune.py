@@ -41,9 +41,9 @@ RECOGNITION_HYPER_PARAMS = {'pad': 16,
                             'feed_forward_dropout_p': 0.1,
                             'attention_dropout_p':0.1,
                             'conv_dropout_p':0.1,
-                            'conv_kernel_size': 31,
+                            'conv_kernel_size': 9,
                             'half_step_residual': True,
-                            'decoder_hidden_dim': 512,
+                            'subsampling_factor': 8,
                             }
 
 def train_model(trial: 'optuna.trial.Trial',

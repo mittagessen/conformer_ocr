@@ -83,23 +83,20 @@ class RecognitionModel(pl.LightningModule):
 
         logger.info(f'Creating conformer model with {num_classes} outputs')
         self.encoder = ConformerEncoder(input_dim=hyper_params['height'],
-                                                 encoder_dim=hyper_params['encoder_dim'],
-                                                 num_layers=hyper_params['num_encoder_layers'],
-                                                 num_attention_heads=hyper_params['num_attention_heads'],
-                                                 feed_forward_expansion_factor=hyper_params['feed_forward_expansion_factor'],
-                                                 conv_expansion_factor=hyper_params['conv_expansion_factor'],
-                                                 input_dropout_p=hyper_params['input_dropout_p'],
-                                                 feed_forward_dropout_p=hyper_params['feed_forward_dropout_p'],
-                                                 attention_dropout_p=hyper_params['attention_dropout_p'],
-                                                 conv_dropout_p=hyper_params['conv_dropout_p'],
-                                                 conv_kernel_size=hyper_params['conv_kernel_size'],
-                                                 half_step_residual=hyper_params['half_step_residual'])
-        self.decoder = nn.LSTM(hyper_params['encoder_dim'],
-                               hyper_params['decoder_hidden_dim'],
-                               bidirectional=True,
-                               batch_first=True)
-        self.fc = nn.Linear(2*hyper_params['decoder_hidden_dim'], num_classes, bias=False)
-        self.nn = nn.Sequential(self.encoder, self.decoder, self.fc)
+                                        encoder_dim=hyper_params['encoder_dim'],
+                                        num_layers=hyper_params['num_encoder_layers'],
+                                        num_attention_heads=hyper_params['num_attention_heads'],
+                                        feed_forward_expansion_factor=hyper_params['feed_forward_expansion_factor'],
+                                        conv_expansion_factor=hyper_params['conv_expansion_factor'],
+                                        input_dropout_p=hyper_params['input_dropout_p'],
+                                        feed_forward_dropout_p=hyper_params['feed_forward_dropout_p'],
+                                        attention_dropout_p=hyper_params['attention_dropout_p'],
+                                        conv_dropout_p=hyper_params['conv_dropout_p'],
+                                        conv_kernel_size=hyper_params['conv_kernel_size'],
+                                        half_step_residual=hyper_params['half_step_residual'],
+                                        subsampling_factor=hyper_params['subsampling_factor'])
+        self.decoder = nn.Linear(hyper_params['encoder_dim'], num_classes, bias=False)
+        self.nn = nn.Sequential(self.encoder, self.decoder)
 
         # loss
         self.criterion = nn.CTCLoss(reduction='sum', zero_infinity=True)
@@ -116,10 +113,7 @@ class RecognitionModel(pl.LightningModule):
         input = input.squeeze(1).transpose(1, 2)
         seq_lens, label_lens = batch['seq_lens'], batch['target_lens']
         encoder_outputs, encoder_lens = self.encoder(input, seq_lens)
-        padded_encoder_outputs = pack_padded_sequence(encoder_outputs, encoder_lens.cpu(), batch_first=True, enforce_sorted=False)
-        decoder_outputs, _ = self.decoder(padded_encoder_outputs)
-        decoder_outputs, encoder_lens = pad_packed_sequence(decoder_outputs, batch_first=True)
-        probits = self.fc(decoder_outputs)
+        probits = self.decoder(encoder_outputs)
         logits = nn.functional.log_softmax(probits, dim=-1)
 
         # NCW -> WNC
@@ -134,10 +128,7 @@ class RecognitionModel(pl.LightningModule):
         input = batch['image'].squeeze(1).transpose(1, 2)
         seq_lens, label_lens = batch['seq_lens'], batch['target_lens']
         encoder_outputs, encoder_lens = self.encoder(input, seq_lens)
-        padded_encoder_outputs = pack_padded_sequence(encoder_outputs, encoder_lens.cpu(), batch_first=True, enforce_sorted=False)
-        decoder_outputs, _ = self.decoder(padded_encoder_outputs)
-        decoder_outputs, encoder_lens = pad_packed_sequence(decoder_outputs, batch_first=True)
-        o = self.fc.forward(decoder_outputs).transpose(1, 2).cpu().float().numpy()
+        o = self.fc.forward(encoder_outputs).transpose(1, 2).cpu().float().numpy()
 
         dec_strs = []
         pred = []

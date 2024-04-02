@@ -148,13 +148,14 @@ class ConformerConvModule(nn.Module):
         return self.sequential(inputs).transpose(1, 2)
 
 
-class Conv2dSubampling(nn.Module):
+class Conv2dSubsampling(nn.Module):
     """
     Convolutional 2D subsampling (to 1/4 length)
 
     Args:
-        in_channels (int): Number of channels in the input image
-        out_channels (int): Number of channels produced by the convolution
+        in_channels: Number of channels in the input image
+        out_channels: Number of channels produced by the convolution
+        subsampling_factor: The subsampling factor which should be a power of 2
 
     Inputs: inputs
         - **inputs** (batch, time, dim): Tensor containing sequence of inputs
@@ -163,23 +164,41 @@ class Conv2dSubampling(nn.Module):
         - **outputs** (batch, time, dim): Tensor produced by the convolution
         - **output_lengths** (batch): list of sequence output lengths
     """
-    def __init__(self, in_channels: int, out_channels: int) -> None:
-        super(Conv2dSubampling, self).__init__()
-        self.sequential = nn.Sequential(
-            nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=2),
-            nn.ReLU(),
-            nn.Conv2d(out_channels, out_channels, kernel_size=3, stride=2),
-            nn.ReLU(),
-        )
+    def __init__(self,
+                 in_channels: int,
+                 out_channels: int,
+                 subsampling_factor: int) -> None:
+        super(Conv2dSubsampling, self).__init__()
+
+        if not math.log(subsampling_factor, 2).is_integer():
+            raise ValueError('Subsampling factor should be a multiple of 2.')
+
+        self._sampling_num = int(math.log(subsampling_factor, 2))
+        self._kernel_size = 3
+        self._padding = (self._kernel_size - 1) // 2
+
+        layers = []
+        for i in range(self._sampling_num):
+            layers.append(nn.Conv2d(in_channels,
+                                    out_channels,
+                                    kernel_size=3,
+                                    stride=2,
+                                    padding=self._padding))
+            layers.append(nn.ReLU())
+            in_channels = out_channels
+        self.sequential = nn.Sequential(layers)
 
     def forward(self, inputs: Tensor, input_lengths: Tensor) -> Tuple[Tensor, Tensor]:
         outputs = self.sequential(inputs.unsqueeze(1))
-        batch_size, channels, subsampled_lengths, sumsampled_dim = outputs.size()
+        batch_size, channels, subsampled_lengths, subsampled_dim = outputs.size()
 
         outputs = outputs.permute(0, 2, 1, 3)
-        outputs = outputs.contiguous().view(batch_size, subsampled_lengths, channels * sumsampled_dim)
+        outputs = outputs.contiguous().view(batch_size, subsampled_lengths, channels * subsampled_dim)
 
-        output_lengths = input_lengths >> 2
-        output_lengths -= 1
-
+        add_pad: float = self._padding - self._kernel_size
+        one: float = 1.0
+        for i in range(self._sampling_num):
+            lengths = torch.div(input_lengths.to(dtype=torch.float) + add_pad, stride) + one
+            lengths = torch.floor(lengths)
+        output_lengths = lengths.to(dtype=torch.int)
         return outputs, output_lengths

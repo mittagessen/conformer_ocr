@@ -21,7 +21,7 @@ from .feed_forward import FeedForwardModule
 from .attention import MultiHeadedSelfAttentionModule
 from .convolution import (
     ConformerConvModule,
-    Conv2dSubampling,
+    Conv2dSubsampling,
 )
 from .modules import (
     ResidualConnectionModule,
@@ -150,9 +150,12 @@ class ConformerEncoder(nn.Module):
             conv_dropout_p: float = 0.1,
             conv_kernel_size: int = 31,
             half_step_residual: bool = True,
+            subsampling_factor: int = 4,
     ):
         super(ConformerEncoder, self).__init__()
-        self.conv_subsample = Conv2dSubampling(in_channels=1, out_channels=encoder_dim)
+        self.conv_subsample = Conv2dSubsampling(in_channels=1,
+                                                out_channels=encoder_dim,
+                                                subsampling_factor)
         self.input_projection = nn.Sequential(
             Linear(encoder_dim * (((input_dim - 1) // 2 - 1) // 2), encoder_dim),
             nn.Dropout(p=input_dropout_p),
