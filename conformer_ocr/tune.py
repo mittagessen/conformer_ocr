@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 import click
 
-from conformer_ocr.cli.util import _expand_gt, _validate_manifests, message
+from conformer_ocr.cli.util import _expand_gt, _validate_manifests, message, to_ptl_device
 
 RECOGNITION_HYPER_PARAMS = {'pad': 16,
                             'freq': 1.0,
@@ -47,6 +47,8 @@ RECOGNITION_HYPER_PARAMS = {'pad': 16,
                             }
 
 def train_model(trial: 'optuna.trial.Trial',
+                accelerator,
+                device,
                 format_type,
                 training_data,
                 evaluation_data) -> float:
@@ -81,8 +83,8 @@ def train_model(trial: 'optuna.trial.Trial',
                              num_classes=data_module.num_classes,
                              batches_per_epoch=len(data_module.train_dataloader()))
 
-    trainer = Trainer(accelerator="gpu",
-                      devices=1,
+    trainer = Trainer(accelerator=accelerator,
+                      devices=device,
                       precision=16,
                       max_epochs=hyper_params['epochs'],
                       min_epochs=hyper_params['min_epochs'],
@@ -100,6 +102,8 @@ def train_model(trial: 'optuna.trial.Trial',
 @click.command()
 @click.version_option()
 @click.pass_context
+@click.option('-d', '--device', default='cpu', show_default=True,
+              help='Select device to use (cpu, cuda:0, cuda:1, ...)')
 @click.option('-s', '--seed', default=None, type=click.INT,
               help='Seed for numpy\'s and torch\'s RNG. Set to a fixed value to '
                    'ensure reproducible random splits of data')
@@ -123,8 +127,13 @@ def train_model(trial: 'optuna.trial.Trial',
               'containing the transcription. In binary mode files are datasets '
               'files containing pre-extracted text lines.')
 @click.argument('ground_truth', nargs=-1, callback=_expand_gt, type=click.Path(exists=False, dir_okay=False))
-def cli(ctx, seed, database, name, epochs, samples, workers, pruning, training_files,
-        evaluation_files, format_type, ground_truth):
+def cli(ctx, device, seed, database, name, epochs, samples, workers, pruning,
+        training_files, evaluation_files, format_type, ground_truth):
+
+    try:
+        accelerator, device = to_ptl_device(device)
+    except Exception as e:
+        raise click.BadOptionUsage('device', str(e))
 
     from functools import partial
 
@@ -147,7 +156,12 @@ def cli(ctx, seed, database, name, epochs, samples, workers, pruning, training_f
     if len(ground_truth) == 0:
         raise click.UsageError('No training data was provided to the train command. Use `-t` or the `ground_truth` argument.')
 
-    objective = partial(train_model, format_type=format_type, training_data=ground_truth, evaluation_data=evaluation_files)
+    objective = partial(train_model,
+                        accelerator=accelerator,
+                        device=device,
+                        format_type=format_type,
+                        training_data=ground_truth,
+                        evaluation_data=evaluation_files)
 
     pruner = optuna.pruners.MedianPruner() if pruning else optuna.pruners.NopPruner()
 
