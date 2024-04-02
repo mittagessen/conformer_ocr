@@ -171,8 +171,9 @@ def cli(ctx, device, seed, database, name, epochs, samples, workers, pruning,
     study = optuna.create_study(direction="maximize",
                                 pruner=pruner,
                                 study_name=name,
-                                storage=database)
-    study.optimize(objective, n_trials=samples, load_if_exists=True)
+                                storage=database,
+                                load_if_exists=True)
+    study.optimize(objective, n_trials=samples)
 
     print("Number of finished trials: {}".format(len(study.trials)))
 
