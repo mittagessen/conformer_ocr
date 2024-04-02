@@ -181,7 +181,7 @@ class Conv2dSubsampling(nn.Module):
         for i in range(self._sampling_num):
             layers.append(nn.Conv2d(in_channels,
                                     out_channels,
-                                    kernel_size=3,
+                                    kernel_size=self._kernel_size,
                                     stride=2,
                                     padding=self._padding))
             layers.append(nn.ReLU())
@@ -198,7 +198,7 @@ class Conv2dSubsampling(nn.Module):
         add_pad: float = self._padding - self._kernel_size
         one: float = 1.0
         for i in range(self._sampling_num):
-            lengths = torch.div(input_lengths.to(dtype=torch.float) + add_pad, stride) + one
+            lengths = torch.div(input_lengths.to(dtype=torch.float) + add_pad, 2) + one
             lengths = torch.floor(lengths)
         output_lengths = lengths.to(dtype=torch.int)
         return outputs, output_lengths
