@@ -186,7 +186,7 @@ class Conv2dSubsampling(nn.Module):
                                     padding=self._padding))
             layers.append(nn.ReLU())
             in_channels = out_channels
-        self.sequential = nn.Sequential(layers)
+        self.sequential = nn.Sequential(*layers)
 
     def forward(self, inputs: Tensor, input_lengths: Tensor) -> Tuple[Tensor, Tensor]:
         outputs = self.sequential(inputs.unsqueeze(1))
