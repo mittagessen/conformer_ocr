@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 import click
+import uuid
 
 from conformer_ocr.cli.util import _expand_gt, _validate_manifests, message, to_ptl_device
 
