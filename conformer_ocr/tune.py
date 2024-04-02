@@ -108,7 +108,7 @@ def train_model(trial: 'optuna.trial.Trial',
 @click.option('-s', '--seed', default=None, type=click.INT,
               help='Seed for numpy\'s and torch\'s RNG. Set to a fixed value to '
                    'ensure reproducible random splits of data')
-@click.option('-d', '--database', show_default=True, default='sqlite://cocr.db', help='optuna SQL database location')
+@click.option('-d', '--database', show_default=True, default='sqlite:///cocr.db', help='optuna SQL database location')
 @click.option('-n', '--name', show_default=True, default=str(uuid.uuid4()), help='trial identifier')
 @click.option('-N', '--epochs', show_default=True, default=RECOGNITION_HYPER_PARAMS['epochs'], help='Number of epochs to train for')
 @click.option('-S', '--samples', show_default=True, default=25, help='Number of samples')
