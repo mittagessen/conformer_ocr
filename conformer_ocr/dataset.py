@@ -146,7 +146,7 @@ class TextLineDataModule(pl.LightningDataModule):
         for sample in training_data:
             try:
                 dataset.add(**sample)
-            except KrakenInputException as e:
+            except Exception as e:
                 logger.warning(str(e))
         if self.hparams.format_type == 'binary' and self.hparams.normalization:
             logger.debug('Rebuilding dataset using unicode normalization')
