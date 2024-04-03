@@ -56,5 +56,6 @@ RECOGNITION_HYPER_PARAMS = {'pad': 16,
                             'conv_dropout_p':0.1,
                             'conv_kernel_size': 9,
                             'half_step_residual': True,
+                            'subsampling_conv_channels': 256,
                             'subsampling_factor': 8,
                             }

@@ -116,17 +116,20 @@ class ConformerEncoder(nn.Module):
     with a number of conformer blocks.
 
     Args:
-        input_dim (int, optional): Dimension of input vector
-        encoder_dim (int, optional): Dimension of conformer encoder
-        num_layers (int, optional): Number of conformer blocks
-        num_attention_heads (int, optional): Number of attention heads
-        feed_forward_expansion_factor (int, optional): Expansion factor of feed forward module
-        conv_expansion_factor (int, optional): Expansion factor of conformer convolution module
-        feed_forward_dropout_p (float, optional): Probability of feed forward module dropout
-        attention_dropout_p (float, optional): Probability of attention module dropout
-        conv_dropout_p (float, optional): Probability of conformer convolution module dropout
-        conv_kernel_size (int or tuple, optional): Size of the convolving kernel
-        half_step_residual (bool): Flag indication whether to use half step residual or not
+        in_channels: Number of input channels
+        input_dim: Dimension (height) of input vector
+        encoder_dim: Dimension of conformer encoder
+        num_layers: Number of conformer blocks
+        num_attention_heads: Number of attention heads
+        feed_forward_expansion_factor: Expansion factor of feed forward module
+        conv_expansion_factor: Expansion factor of conformer convolution module
+        feed_forward_dropout_p: Probability of feed forward module dropout
+        attention_dropout_p: Probability of attention module dropout
+        conv_dropout_p: Probability of conformer convolution module dropout
+        conv_kernel_size: Size of the convolving kernel
+        half_step_residual: Flag indication whether to use half step residual or not
+        subsampling_conv_channels: Channels in subsampling convolutional filter
+        subsampling_factor: subsampling factor. Must be a power of 2.
 
     Inputs: inputs, input_lengths
         - **inputs** (batch, time, dim): Tensor containing input vector
@@ -138,6 +141,7 @@ class ConformerEncoder(nn.Module):
     """
     def __init__(
             self,
+            in_channels: int = 1,
             input_dim: int = 80,
             encoder_dim: int = 512,
             num_layers: int = 17,
@@ -150,16 +154,17 @@ class ConformerEncoder(nn.Module):
             conv_dropout_p: float = 0.1,
             conv_kernel_size: int = 31,
             half_step_residual: bool = True,
+            subsampling_conv_channels: int = 256,
             subsampling_factor: int = 4,
     ):
         super(ConformerEncoder, self).__init__()
-        self.conv_subsample = Conv2dSubsampling(in_channels=1,
+        self.conv_subsample = Conv2dSubsampling(in_channels=in_channels,
                                                 out_channels=encoder_dim,
+                                                in_feats=input_dim,
+                                                conv_channels=subsampling_conv_channels,
+                                                input_dropout_p=input_dropout_p,
                                                 subsampling_factor=subsampling_factor)
-        self.input_projection = nn.Sequential(
-            Linear(encoder_dim * (((input_dim - 1) // 2 - 1) // 2), encoder_dim),
-            nn.Dropout(p=input_dropout_p),
-        )
+
         self.layers = nn.ModuleList([ConformerBlock(
             encoder_dim=encoder_dim,
             num_attention_heads=num_attention_heads,
@@ -199,7 +204,6 @@ class ConformerEncoder(nn.Module):
             * output_lengths (torch.LongTensor): The length of output tensor. ``(batch)``
         """
         outputs, output_lengths = self.conv_subsample(inputs, input_lengths)
-        outputs = self.input_projection(outputs)
 
         for layer in self.layers:
             outputs = layer(outputs)

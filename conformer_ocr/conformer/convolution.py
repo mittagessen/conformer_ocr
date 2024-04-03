@@ -167,38 +167,82 @@ class Conv2dSubsampling(nn.Module):
     def __init__(self,
                  in_channels: int,
                  out_channels: int,
-                 subsampling_factor: int) -> None:
+                 in_feats: int = 80,
+                 conv_channels: int = 256,
+                 input_dropout_p: float = 0.1,
+                 subsampling_factor: int = 8) -> None:
         super(Conv2dSubsampling, self).__init__()
 
-        if not math.log(subsampling_factor, 2).is_integer():
-            raise ValueError('Subsampling factor should be a multiple of 2.')
+        self._conv_channels = conv_channels
+        self._in_feats = in_feats
+        self._input_dropout_p = input_dropout_p
 
+        if not math.log(subsampling_factor, 2).is_integer():
+            raise ValueError('Sampling factor should be a power of 2.')
         self._sampling_num = int(math.log(subsampling_factor, 2))
+        self.subsampling_factor = subsampling_factor
+
+        self._stride = 2
         self._kernel_size = 3
+
         self._padding = (self._kernel_size - 1) // 2
 
+        in_channels = 1
         layers = []
-        for i in range(self._sampling_num):
-            layers.append(nn.Conv2d(in_channels,
-                                    out_channels,
-                                    kernel_size=self._kernel_size,
-                                    stride=2,
-                                    padding=self._padding))
-            layers.append(nn.ReLU())
-            in_channels = out_channels
-        self.sequential = nn.Sequential(*layers)
+        layers.append(nn.Conv2d(in_channels=in_channels,
+                                out_channels=conv_channels,
+                                kernel_size=self._kernel_size,
+                                stride=self._stride,
+                                padding=self._padding))
+        in_channels = conv_channels
+        layers.append(nn.ReLU(True))
+        for i in range(self._sampling_num - 1):
+            layers.append(nn.Conv2d(in_channels=in_channels,
+                          out_channels=in_channels,
+                          kernel_size=self._kernel_size,
+                          stride=self._stride,
+                          padding=self._padding,
+                          groups=in_channels))
+
+            layers.append(nn.Conv2d(in_channels=in_channels,
+                                    out_channels=conv_channels,
+                                    kernel_size=1,
+                                    stride=1,
+                                    padding=0,
+                                    groups=1))
+            layers.append(nn.ReLU(True))
+            in_channels = conv_channels
+
+        self.conv = nn.Sequential(*layers)
+        in_length = torch.tensor(in_feats, dtype=torch.float)
+        out_length = calc_length(lengths=in_length,
+                                 all_paddings=2*self._padding,
+                                 kernel_size=self._kernel_size,
+                                 stride=self._stride,
+                                 repeat_num=self._sampling_num)
+
+        self.out = nn.Sequential(nn.Linear(conv_channels * int(out_length), out_channels),
+                                 nn.Dropout(p=input_dropout_p))
 
     def forward(self, inputs: Tensor, input_lengths: Tensor) -> Tuple[Tensor, Tensor]:
-        outputs = self.sequential(inputs.unsqueeze(1))
-        batch_size, channels, subsampled_lengths, subsampled_dim = outputs.size()
+        output_lengths = calc_length(input_lengths,
+                                     all_paddings=2*self._padding,
+                                     kernel_size=self._kernel_size,
+                                     stride=self._stride,
+                                     repeat_num=self._sampling_num)
+        x = inputs.unsqueeze(1)
+        x = self.conv(x)
+        b, c, t, f = x.size()
+        x = self.out(x.transpose(1, 2).reshape(b, t, -1))
+        return x, output_lengths
 
-        outputs = outputs.permute(0, 2, 1, 3)
-        outputs = outputs.contiguous().view(batch_size, subsampled_lengths, channels * subsampled_dim)
 
-        add_pad: float = self._padding - self._kernel_size
-        one: float = 1.0
-        for i in range(self._sampling_num):
-            lengths = torch.div(input_lengths.to(dtype=torch.float) + add_pad, 2) + one
-            lengths = torch.floor(lengths)
-        output_lengths = lengths.to(dtype=torch.int)
-        return outputs, output_lengths
+def calc_length(lengths, all_paddings, kernel_size, stride, repeat_num=1):
+    """ Calculates the output length of a Tensor passed through a convolution or max pooling layer"""
+    add_pad: float = all_paddings - kernel_size
+    one: float = 1.0
+    for i in range(repeat_num):
+        lengths = torch.div(lengths.to(dtype=torch.float) + add_pad, stride) + one
+        lengths = torch.floor(lengths)
+    return lengths.to(dtype=torch.int)
+

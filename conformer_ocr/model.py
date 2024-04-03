@@ -82,7 +82,8 @@ class RecognitionModel(pl.LightningModule):
             torch.multiprocessing.set_sharing_strategy('file_system')
 
         logger.info(f'Creating conformer model with {num_classes} outputs')
-        self.encoder = ConformerEncoder(input_dim=hyper_params['height'],
+        self.encoder = ConformerEncoder(in_channels=1,
+                                        input_dim=hyper_params['height'],
                                         encoder_dim=hyper_params['encoder_dim'],
                                         num_layers=hyper_params['num_encoder_layers'],
                                         num_attention_heads=hyper_params['num_attention_heads'],
@@ -94,12 +95,13 @@ class RecognitionModel(pl.LightningModule):
                                         conv_dropout_p=hyper_params['conv_dropout_p'],
                                         conv_kernel_size=hyper_params['conv_kernel_size'],
                                         half_step_residual=hyper_params['half_step_residual'],
+                                        subsampling_conv_channels=hyper_params['subsampling_conv_channels'],
                                         subsampling_factor=hyper_params['subsampling_factor'])
         self.decoder = nn.Linear(hyper_params['encoder_dim'], num_classes, bias=False)
         self.nn = nn.Sequential(self.encoder, self.decoder)
 
         # loss
-        self.criterion = nn.CTCLoss(reduction='sum', zero_infinity=True)
+        self.criterion = nn.CTCLoss(reduction='mean', zero_infinity=True)
 
         self.val_cer = CharErrorRate()
         self.val_wer = WordErrorRate()
