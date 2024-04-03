@@ -71,12 +71,6 @@ logger = logging.getLogger('conformer_ocr')
               default=RECOGNITION_HYPER_PARAMS['min_delta'],
               type=click.FLOAT,
               help='Minimum improvement between epochs to reset early stopping. Default is scales the delta by the best loss')
-@click.option('-d', '--device', show_default=True, default='cpu', help='Select device to use (cpu, cuda:0, cuda:1, ...)')
-@click.option('--precision',
-              show_default=True,
-              default='16',
-              type=click.Choice(['64', '32', 'bf16', '16']),
-              help='Numerical precision to use for training. Default is 32-bit single-point precision.')
 @click.option('--optimizer',
               show_default=True,
               default=RECOGNITION_HYPER_PARAMS['optimizer'],
@@ -157,12 +151,12 @@ logger = logging.getLogger('conformer_ocr')
               help='Enable image augmentation')
 @click.argument('ground_truth', nargs=-1, callback=_expand_gt, type=click.Path(exists=False, dir_okay=False))
 def train(ctx, batch_size, pad, line_height, output, freq, quit, epochs,
-          min_epochs, lag, min_delta, device, precision, optimizer, lrate,
-          momentum, weight_decay, warmup, freeze_backbone, schedule, gamma,
-          step_size, sched_patience, cos_max, partition, fixed_splits,
-          normalization, normalize_whitespace, codec, reorder, base_dir,
-          training_files, evaluation_files, workers, threads, format_type,
-          augment, ground_truth):
+          min_epochs, lag, min_delta, optimizer, lrate, momentum, weight_decay,
+          warmup, freeze_backbone, schedule, gamma, step_size, sched_patience,
+          cos_max, partition, fixed_splits, normalization,
+          normalize_whitespace, codec, reorder, base_dir, training_files,
+          evaluation_files, workers, threads, format_type, augment,
+          ground_truth):
     """
     Trains a model from image-text pairs.
     """
@@ -231,7 +225,7 @@ def train(ctx, batch_size, pad, line_height, output, freq, quit, epochs,
         codec = json.load(codec)
 
     try:
-        accelerator, device = to_ptl_device(device)
+        accelerator, device = to_ptl_device(ctx.meta['device'])
     except Exception as e:
         raise click.BadOptionUsage('device', str(e))
 
