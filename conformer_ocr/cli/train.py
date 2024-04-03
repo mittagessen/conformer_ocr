@@ -75,6 +75,7 @@ logger = logging.getLogger('conformer_ocr')
               show_default=True,
               default=RECOGNITION_HYPER_PARAMS['optimizer'],
               type=click.Choice(['Adam',
+                                 'AdamW',
                                  'SGD',
                                  'RMSprop']),
               help='Select optimizer')
@@ -114,6 +115,10 @@ logger = logging.getLogger('conformer_ocr')
               show_default=True,
               default=RECOGNITION_HYPER_PARAMS['cos_t_max'],
               help='Epoch of minimal learning rate for cosine LR scheduler.')
+@click.option('--cos-min-lr',
+              show_default=True,
+              default=RECOGNITION_HYPER_PARAMS['cos_min_lr'],
+              help='Minimal final learning rate for cosine LR scheduler.')
 @click.option('-p', '--partition', show_default=True, default=0.9,
               help='Ground truth data partition ratio between train/validation set')
 @click.option('--fixed-splits/--ignore-fixed-split', show_default=True, default=False,
@@ -153,7 +158,7 @@ logger = logging.getLogger('conformer_ocr')
 def train(ctx, batch_size, pad, line_height, output, freq, quit, epochs,
           min_epochs, lag, min_delta, optimizer, lrate, momentum, weight_decay,
           warmup, freeze_backbone, schedule, gamma, step_size, sched_patience,
-          cos_max, partition, fixed_splits, normalization,
+          cos_max, cos_min_lr, partition, fixed_splits, normalization,
           normalize_whitespace, codec, reorder, base_dir, training_files,
           evaluation_files, workers, threads, format_type, augment,
           ground_truth):
@@ -200,6 +205,7 @@ def train(ctx, batch_size, pad, line_height, output, freq, quit, epochs,
                          'step_size': step_size,
                          'rop_patience': sched_patience,
                          'cos_t_max': cos_max,
+                         'cos_min_lr': cos_min_lr,
                          'normalization': normalization,
                          'normalize_whitespace': normalize_whitespace,
                          'augment': augment,

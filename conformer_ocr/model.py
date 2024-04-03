@@ -215,6 +215,8 @@ def _configure_optimizer_and_lr_scheduler(hparams, params, loss_tracking_mode='m
     weight_decay = hparams.get("weight_decay")
     schedule = hparams.get("schedule")
     gamma = hparams.get("gamma")
+    cos_t_max = hparams.get("cos_t_max")
+    cos_min_lr = hparams.get("cos_min_lr")
     step_size = hparams.get("step_size")
     rop_factor = hparams.get("rop_factor")
     rop_patience = hparams.get("rop_patience")
@@ -235,7 +237,10 @@ def _configure_optimizer_and_lr_scheduler(hparams, params, loss_tracking_mode='m
         lr_sched = {'scheduler': lr_scheduler.ExponentialLR(optim, gamma, last_epoch=completed_epochs-1),
                     'interval': 'step'}
     elif schedule == 'cosine':
-        lr_sched = {'scheduler': lr_scheduler.CosineAnnealingLR(optim, gamma, last_epoch=completed_epochs-1),
+        lr_sched = {'scheduler': lr_scheduler.CosineAnnealingLR(optim,
+                                                                cos_t_max,
+                                                                cos_min_lr,
+                                                                last_epoch=completed_epochs-1),
                     'interval': 'step'}
     elif schedule == 'step':
         lr_sched = {'scheduler': lr_scheduler.StepLR(optim, step_size, gamma, last_epoch=completed_epochs-1),
