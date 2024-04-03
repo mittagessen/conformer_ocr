@@ -3,49 +3,7 @@ import click
 import uuid
 
 from conformer_ocr.cli.util import _expand_gt, _validate_manifests, message, to_ptl_device
-
-RECOGNITION_HYPER_PARAMS = {'pad': 16,
-                            'freq': 1.0,
-                            'batch_size': 1,
-                            'quit': 'fixed',
-                            'epochs': 30,
-                            'min_epochs': 30,
-                            'lag': 10,
-                            'min_delta': None,
-                            'optimizer': 'Adam',
-                            'lrate': 1e-3,
-                            'momentum': 0.9,
-                            'weight_decay': 0.0,
-                            'schedule': 'constant',
-                            'normalization': 'NFD',
-                            'normalize_whitespace': True,
-                            'completed_epochs': 0,
-                            'augment': False,
-                            # lr scheduler params
-                            # step/exp decay
-                            'step_size': 10,
-                            'gamma': 0.1,
-                            # reduce on plateau
-                            'rop_factor': 0.1,
-                            'rop_patience': 5,
-                            # cosine
-                            'cos_t_max': 50,
-                            'warmup': 0,
-                            'freeze_backbone': 0,
-                            'height': 96,
-                            'encoder_dim': 512,
-                            'num_encoder_layers': 17,
-                            'num_attention_heads': 8,
-                            'feed_forward_expansion_factor':4,
-                            'conv_expansion_factor': 2,
-                            'input_dropout_p': 0.1,
-                            'feed_forward_dropout_p': 0.1,
-                            'attention_dropout_p':0.1,
-                            'conv_dropout_p':0.1,
-                            'conv_kernel_size': 9,
-                            'half_step_residual': True,
-                            'subsampling_factor': 8,
-                            }
+from conformer_ocr.default_specs import RECOGNITION_HYPER_PARAMS
 
 def train_model(trial: 'optuna.trial.Trial',
                 accelerator,
@@ -68,7 +26,6 @@ def train_model(trial: 'optuna.trial.Trial',
     hyper_params['height'] = trial.suggest_int('height', 48, 128)
     hyper_params['lr'] = trial.suggest_loguniform('lr', 1e-6, 1e-1)
     batch_size = trial.suggest_categorical('batch_size', [1, 2, 4, 8, 16])
-    hyper_params['decoder_hidden_dim'] = trial.suggest_int('decoder_hidden_dim', 128, 512, log=True)
 
     data_module = TextLineDataModule(training_data=training_data,
                                      evaluation_data=evaluation_data,
