@@ -108,7 +108,7 @@ class RecognitionModel(pl.LightningModule):
 
     def forward(self, x, seq_lens=None):
         encoder_outputs, encoder_lens = self.encoder(x, seq_lens)
-        return self.fc(encoder_outputs), encoder_lens
+        return self.decoder(encoder_outputs), encoder_lens
 
     def training_step(self, batch, batch_idx):
         input, target = batch['image'], batch['target']
@@ -130,7 +130,7 @@ class RecognitionModel(pl.LightningModule):
         input = batch['image'].squeeze(1).transpose(1, 2)
         seq_lens, label_lens = batch['seq_lens'], batch['target_lens']
         encoder_outputs, encoder_lens = self.encoder(input, seq_lens)
-        o = self.fc.forward(encoder_outputs).transpose(1, 2).cpu().float().numpy()
+        o = self.decoder(encoder_outputs).transpose(1, 2).cpu().float().numpy()
 
         dec_strs = []
         pred = []
