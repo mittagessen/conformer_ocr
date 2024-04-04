@@ -101,7 +101,7 @@ class RecognitionModel(pl.LightningModule):
         self.nn = nn.Sequential(self.encoder, self.decoder)
 
         # loss
-        self.criterion = nn.CTCLoss(reduction='mean', zero_infinity=True)
+        self.criterion = nn.CTCLoss(reduction='none', zero_infinity=True)
 
         self.val_cer = CharErrorRate()
         self.val_wer = WordErrorRate()
@@ -123,6 +123,7 @@ class RecognitionModel(pl.LightningModule):
                               target,
                               encoder_lens,
                               label_lens)
+        loss = loss.sum() / batch['target_lens'].sum()
         self.log('train_loss', loss, on_step=True, on_epoch=False, prog_bar=False, logger=True)
         return loss
 
