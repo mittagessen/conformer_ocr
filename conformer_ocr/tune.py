@@ -22,10 +22,10 @@ def train_model(trial: 'optuna.trial.Trial',
 
     hyper_params = RECOGNITION_HYPER_PARAMS.copy()
 
-    hyper_params['warmup'] = trial.suggest_int('warmup', 1, 10000, log=True)
+    hyper_params['warmup'] = trial.suggest_int('warmup', 1, 15000, log=True)
     hyper_params['height'] = trial.suggest_int('height', 48, 128)
-    hyper_params['lr'] = trial.suggest_loguniform('lr', 1e-6, 1e-1)
-    batch_size = trial.suggest_categorical('batch_size', [1, 2, 4, 8, 16])
+    hyper_params['lr'] = trial.suggest_loguniform('lr', 1e-8, 1e-4)
+    batch_size = trial.suggest_categorical('batch_size', [8, 16, 32])
 
     data_module = TextLineDataModule(training_data=training_data,
                                      evaluation_data=evaluation_data,
