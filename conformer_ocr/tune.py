@@ -14,11 +14,11 @@ def train_model(trial: 'optuna.trial.Trial',
 
     from conformer_ocr.dataset import TextLineDataModule
     from conformer_ocr.model import RecognitionModel
+    from conformer_ocr.lightning_utils import PyTorchLightningPruningCallback
 
     from pytorch_lightning import Trainer
     from threadpoolctl import threadpool_limits
 
-    from optuna.integration import PyTorchLightningPruningCallback
 
     hyper_params = RECOGNITION_HYPER_PARAMS.copy()
 
