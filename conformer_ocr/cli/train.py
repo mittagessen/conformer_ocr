@@ -181,7 +181,7 @@ def train(ctx, batch_size, pad, line_height, output, freq, quit, epochs,
     from conformer_ocr.model import RecognitionModel
 
     from pytorch_lightning import Trainer
-    from pytorch_lightning.callbacks import RichModelSummary, ModelCheckpoint
+    from pytorch_lightning.callbacks import RichModelSummary, ModelCheckpoint, RickProgressBar
 
     hyper_params = RECOGNITION_HYPER_PARAMS.copy()
     hyper_params.update({'freq': freq,
@@ -265,6 +265,7 @@ def train(ctx, batch_size, pad, line_height, output, freq, quit, epochs,
 
     checkpoint_callback = ModelCheckpoint(dirpath=output, save_top_k=5, monitor='val_metric', mode='max')
     cbs.append(checkpoint_callback)
+    cbs.append(RichProgressBar(leave=True))
 
     trainer = Trainer(accelerator=accelerator,
                       devices=device,
