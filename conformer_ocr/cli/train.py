@@ -255,7 +255,7 @@ def train(ctx, batch_size, pad, line_height, output, freq, quit, epochs,
                                      codec=codec)
 
     message('Initializing model.')
-    model = RecognitionModel(hyper_params=hyper_params,
+    model = RecognitionModel(**hyper_params,
                              num_classes=data_module.num_classes,
                              batches_per_epoch=len(data_module.train_dataloader()))
 

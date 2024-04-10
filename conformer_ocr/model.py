@@ -46,8 +46,38 @@ logger = logging.getLogger(__name__)
 class RecognitionModel(pl.LightningModule):
     def __init__(self,
                  num_classes: int,
-                 hyper_params: Dict = None,
-                 batches_per_epoch: int = 0):
+                 batches_per_epoch: int = 0,
+                 pad=16,
+                 batch_size=32,
+                 quit='fixed',
+                 lag=10,
+                 optimizer='AdamW',
+                 lr=1e-3,
+                 momentum=0.9,
+                 weight_decay=1e-3,
+                 schedule='cosine',
+                 step_size=10,
+                 gamma=0.1,
+                 rop_factor=0.1,
+                 rop_patience=5,
+                 cos_t_max=30,
+                 cos_min_lr=1e-4,
+                 warmup=15000,
+                 height=96,
+                 encoder_dim=512,
+                 num_encoder_layers=18,
+                 num_attention_heads=8,
+                 feed_forward_expansion_factor=4
+                 conv_expansion_factor=2,
+                 input_dropout_p=0.1,
+                 feed_forward_dropout_p=0.1,
+                 attention_dropout_p=0.1,
+                 conv_dropout_p=0.1,
+                 conv_kernel_size=9,
+                 half_step_residual=True,
+                 subsampling_conv_channels=256,
+                 subsampling_factor=4,
+                 **kwargs):
         """
         A LightningModule encapsulating the training setup for a text
         recognition model.
@@ -58,21 +88,12 @@ class RecognitionModel(pl.LightningModule):
         `hyper_params` argument.
 
         Args:
-            hyper_params (dict): Hyperparameter dictionary containing all fields
-                                 from
-                                 kraken.lib.default_specs.SEGMENTATION_HYPER_PARAMS
-            **kwargs: Setup parameters, i.e. CLI parameters of the segtrain() command.
         """
         super().__init__()
 
         self.best_epoch = -1
         self.best_metric = 0.0
         self.best_model = None
-
-        hyper_params_ = default_specs.RECOGNITION_HYPER_PARAMS.copy()
-
-        if hyper_params:
-            hyper_params_.update(hyper_params)
 
         self.save_hyperparameters()
 
@@ -83,21 +104,21 @@ class RecognitionModel(pl.LightningModule):
 
         logger.info(f'Creating conformer model with {num_classes} outputs')
         self.encoder = ConformerEncoder(in_channels=1,
-                                        input_dim=hyper_params['height'],
-                                        encoder_dim=hyper_params['encoder_dim'],
-                                        num_layers=hyper_params['num_encoder_layers'],
-                                        num_attention_heads=hyper_params['num_attention_heads'],
-                                        feed_forward_expansion_factor=hyper_params['feed_forward_expansion_factor'],
-                                        conv_expansion_factor=hyper_params['conv_expansion_factor'],
-                                        input_dropout_p=hyper_params['input_dropout_p'],
-                                        feed_forward_dropout_p=hyper_params['feed_forward_dropout_p'],
-                                        attention_dropout_p=hyper_params['attention_dropout_p'],
-                                        conv_dropout_p=hyper_params['conv_dropout_p'],
-                                        conv_kernel_size=hyper_params['conv_kernel_size'],
-                                        half_step_residual=hyper_params['half_step_residual'],
-                                        subsampling_conv_channels=hyper_params['subsampling_conv_channels'],
-                                        subsampling_factor=hyper_params['subsampling_factor'])
-        self.decoder = nn.Linear(hyper_params['encoder_dim'], num_classes, bias=False)
+                                        input_dim=height,
+                                        encoder_dim=encoder_dim,
+                                        num_layers=num_encoder_layers,
+                                        num_attention_heads=num_attention_heads,
+                                        feed_forward_expansion_factor=feed_forward_expansion_factor,
+                                        conv_expansion_factor=conv_expansion_factor,
+                                        input_dropout_p=input_dropout_p,
+                                        feed_forward_dropout_p=feed_forward_dropout_p,
+                                        attention_dropout_p=attention_dropout_p,
+                                        conv_dropout_p=conv_dropout_p,
+                                        conv_kernel_size=conv_kernel_size,
+                                        half_step_residual=half_step_residual,
+                                        subsampling_conv_channels=subsampling_conv_channels,
+                                        subsampling_factor=subsampling_factor)
+        self.decoder = nn.Linear(encoder_dim, num_classes, bias=False)
         self.nn = nn.Sequential(self.encoder, self.decoder)
 
         # loss
@@ -166,10 +187,10 @@ class RecognitionModel(pl.LightningModule):
 
     def configure_callbacks(self):
         callbacks = []
-        if self.hparams.hyper_params['quit'] == 'early':
+        if self.hparams.quit == 'early':
             callbacks.append(EarlyStopping(monitor='val_accuracy',
                                            mode='max',
-                                           patience=self.hparams.hyper_params['lag'],
+                                           patience=self.hparams.lag,
                                            stopping_threshold=1.0))
 
         return callbacks
@@ -181,7 +202,7 @@ class RecognitionModel(pl.LightningModule):
     # batch-wise learning rate warmup. In lr_scheduler_step() calls to the
     # scheduler are then only performed at the end of the epoch.
     def configure_optimizers(self):
-        return _configure_optimizer_and_lr_scheduler(self.hparams.hyper_params,
+        return _configure_optimizer_and_lr_scheduler(self.hparams,
                                                      self.nn.parameters(),
                                                      loss_tracking_mode='max')
 
@@ -189,15 +210,15 @@ class RecognitionModel(pl.LightningModule):
         # update params
         optimizer.step(closure=optimizer_closure)
 
-        # linear warmup between 0 and the initial learning rate `lrate` in `warmup`
+        # linear warmup between 0 and the initial learning rate `lr` in `warmup`
         # steps.
-        if self.hparams.hyper_params['warmup'] and self.trainer.global_step < self.hparams.hyper_params['warmup']:
-            lr_scale = min(1.0, float(self.trainer.global_step + 1) / self.hparams.hyper_params['warmup'])
+        if self.hparams.warmup and self.trainer.global_step < self.hparams.warmup:
+            lr_scale = min(1.0, float(self.trainer.global_step + 1) / self.hparams.warmup)
             for pg in optimizer.param_groups:
-                pg["lr"] = lr_scale * self.hparams.hyper_params['lrate']
+                pg["lr"] = lr_scale * self.hparams.lr
 
     def lr_scheduler_step(self, scheduler, metric):
-        if not self.hparams.hyper_params['warmup'] or self.trainer.global_step >= self.hparams.hyper_params['warmup']:
+        if not self.hparams.warmup or self.trainer.global_step >= self.hparams.warmup:
             # step OneCycleLR each batch if not in warmup phase
             if isinstance(scheduler, lr_scheduler.OneCycleLR):
                 scheduler.step()
@@ -211,7 +232,7 @@ class RecognitionModel(pl.LightningModule):
 
 def _configure_optimizer_and_lr_scheduler(hparams, params, loss_tracking_mode='max'):
     optimizer = hparams.get("optimizer")
-    lrate = hparams.get("lrate")
+    lr = hparams.get("lr")
     momentum = hparams.get("momentum")
     weight_decay = hparams.get("weight_decay")
     schedule = hparams.get("schedule")
@@ -225,12 +246,12 @@ def _configure_optimizer_and_lr_scheduler(hparams, params, loss_tracking_mode='m
     completed_epochs = hparams.get("completed_epochs")
 
     # XXX: Warmup is not configured here because it needs to be manually done in optimizer_step()
-    logger.debug(f'Constructing {optimizer} optimizer (lr: {lrate}, momentum: {momentum})')
+    logger.debug(f'Constructing {optimizer} optimizer (lr: {lr}, momentum: {momentum})')
     if optimizer in ['Adam', 'AdamW']:
-        optim = getattr(torch.optim, optimizer)(params, lr=lrate, weight_decay=weight_decay)
+        optim = getattr(torch.optim, optimizer)(params, lr=lr, weight_decay=weight_decay)
     else:
         optim = getattr(torch.optim, optimizer)(params,
-                                                lr=lrate,
+                                                lr=lr,
                                                 momentum=momentum,
                                                 weight_decay=weight_decay)
     lr_sched = {}

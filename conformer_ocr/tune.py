@@ -20,7 +20,6 @@ def train_model(trial: 'optuna.trial.Trial',
     from pytorch_lightning import Trainer
     from threadpoolctl import threadpool_limits
 
-
     hyper_params = RECOGNITION_HYPER_PARAMS.copy()
 
     hyper_params['warmup'] = trial.suggest_int('warmup', 1, 15000, log=True)
@@ -40,7 +39,7 @@ def train_model(trial: 'optuna.trial.Trial',
                                      num_workers=num_workers,
                                      format_type=format_type)
 
-    model = RecognitionModel(hyper_params=hyper_params,
+    model = RecognitionModel(**hyper_params,
                              num_classes=data_module.num_classes,
                              batches_per_epoch=len(data_module.train_dataloader()))
 
