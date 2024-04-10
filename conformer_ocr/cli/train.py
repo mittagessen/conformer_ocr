@@ -35,6 +35,7 @@ logger = logging.getLogger('conformer_ocr')
 
 @click.command('train')
 @click.pass_context
+@click.option('-i', '--load', default=None, type=click.Path(exists=True), help='Checkpoint to load')
 @click.option('-B', '--batch-size', show_default=True, type=click.INT,
               default=RECOGNITION_HYPER_PARAMS['batch_size'], help='batch sample size')
 @click.option('--pad', show_default=True, type=click.INT, default=RECOGNITION_HYPER_PARAMS['pad'], help='Left and right '
@@ -155,7 +156,7 @@ logger = logging.getLogger('conformer_ocr')
               default=RECOGNITION_HYPER_PARAMS['augment'],
               help='Enable image augmentation')
 @click.argument('ground_truth', nargs=-1, callback=_expand_gt, type=click.Path(exists=False, dir_okay=False))
-def train(ctx, batch_size, pad, line_height, output, freq, quit, epochs,
+def train(ctx, load, batch_size, pad, line_height, output, freq, quit, epochs,
           min_epochs, lag, min_delta, optimizer, lrate, momentum, weight_decay,
           warmup, freeze_backbone, schedule, gamma, step_size, sched_patience,
           cos_max, cos_min_lr, partition, fixed_splits, normalization,
@@ -181,7 +182,7 @@ def train(ctx, batch_size, pad, line_height, output, freq, quit, epochs,
     from conformer_ocr.model import RecognitionModel
 
     from pytorch_lightning import Trainer
-    from pytorch_lightning.callbacks import RichModelSummary, ModelCheckpoint, RickProgressBar
+    from pytorch_lightning.callbacks import RichModelSummary, ModelCheckpoint, RichProgressBar
 
     hyper_params = RECOGNITION_HYPER_PARAMS.copy()
     hyper_params.update({'freq': freq,
@@ -253,10 +254,14 @@ def train(ctx, batch_size, pad, line_height, output, freq, quit, epochs,
                                      format_type=format_type,
                                      codec=codec)
 
-    message('Initializing model.')
-    model = RecognitionModel(**hyper_params,
-                             num_classes=data_module.num_classes,
-                             batches_per_epoch=len(data_module.train_dataloader()))
+    if load:
+        message('Loading model.')
+        model = RecognitionModel.load_from_checkpoint(load, **hyper_params)
+    else:
+        message('Initializing model.')
+        model = RecognitionModel(**hyper_params,
+                                 num_classes=data_module.num_classes,
+                                 batches_per_epoch=len(data_module.train_dataloader()))
 
     if len(data_module.train_set) == 0:
         raise click.UsageError('No valid training data was provided to the train command. Use `-t` or the `ground_truth` argument.')
