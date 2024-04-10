@@ -67,7 +67,7 @@ class RecognitionModel(pl.LightningModule):
                  encoder_dim=512,
                  num_encoder_layers=18,
                  num_attention_heads=8,
-                 feed_forward_expansion_factor=4
+                 feed_forward_expansion_factor=4,
                  conv_expansion_factor=2,
                  input_dropout_p=0.1,
                  feed_forward_dropout_p=0.1,
