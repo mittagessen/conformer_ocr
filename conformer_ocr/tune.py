@@ -8,6 +8,7 @@ from conformer_ocr.default_specs import RECOGNITION_HYPER_PARAMS
 def train_model(trial: 'optuna.trial.Trial',
                 accelerator,
                 device,
+                num_workers,
                 format_type,
                 training_data,
                 evaluation_data) -> float:
@@ -23,9 +24,11 @@ def train_model(trial: 'optuna.trial.Trial',
     hyper_params = RECOGNITION_HYPER_PARAMS.copy()
 
     hyper_params['warmup'] = trial.suggest_int('warmup', 1, 15000, log=True)
-    hyper_params['height'] = trial.suggest_int('height', 48, 128)
+#    hyper_params['height'] = trial.suggest_int('height', 48, 128)
     hyper_params['lr'] = trial.suggest_loguniform('lr', 1e-8, 1e-4)
-    batch_size = trial.suggest_categorical('batch_size', [8, 16, 32])
+    hyper_params['weight_decay'] = trial.suggest_loguniform('weight_decay', 1e-8, 1e-4)
+#    batch_size = trial.suggest_categorical('batch_size', [8, 16, 32])
+    batch_size = 32
 
     data_module = TextLineDataModule(training_data=training_data,
                                      evaluation_data=evaluation_data,
@@ -34,7 +37,7 @@ def train_model(trial: 'optuna.trial.Trial',
                                      augmentation=hyper_params['augment'],
                                      partition=0.9,
                                      batch_size=batch_size,
-                                     num_workers=8,
+                                     num_workers=num_workers,
                                      format_type=format_type)
 
     model = RecognitionModel(hyper_params=hyper_params,
@@ -43,11 +46,11 @@ def train_model(trial: 'optuna.trial.Trial',
 
     trainer = Trainer(accelerator=accelerator,
                       devices=device,
-                      precision=16,
+                      precision=32,
                       max_epochs=hyper_params['epochs'],
                       min_epochs=hyper_params['min_epochs'],
-                      enable_progress_bar=False,
-                      enable_model_summary=False,
+                      enable_progress_bar=True,
+                      enable_model_summary=True,
                       enable_checkpointing=False,
                       callbacks=[PyTorchLightningPruningCallback(trial, monitor="val_metric")])
 
@@ -69,7 +72,7 @@ def train_model(trial: 'optuna.trial.Trial',
 @click.option('-n', '--name', show_default=True, default=str(uuid.uuid4()), help='trial identifier')
 @click.option('-N', '--epochs', show_default=True, default=RECOGNITION_HYPER_PARAMS['epochs'], help='Number of epochs to train for')
 @click.option('-S', '--samples', show_default=True, default=25, help='Number of samples')
-@click.option('-w', '--workers', show_default=True, default=3, help='Number of ray tune workers')
+@click.option('-w', '--workers', show_default=True, default=32, help='Number of dataloader workers')
 @click.option('--pruning/--no-pruning', show_default=True, default=True, help='Enables/disables trial pruning')
 @click.option('-t', '--training-files', show_default=True, default=None, multiple=True,
               callback=_validate_manifests, type=click.File(mode='r', lazy=True),
@@ -119,7 +122,8 @@ def cli(ctx, device, seed, database, name, epochs, samples, workers, pruning,
                         device=device,
                         format_type=format_type,
                         training_data=ground_truth,
-                        evaluation_data=evaluation_files)
+                        evaluation_data=evaluation_files,
+                        num_workers=workers)
 
     pruner = optuna.pruners.MedianPruner() if pruning else optuna.pruners.NopPruner()
 
