@@ -79,7 +79,7 @@ logger = logging.getLogger('conformer_ocr')
                                  'SGD',
                                  'RMSprop']),
               help='Select optimizer')
-@click.option('-r', '--lrate', show_default=True, default=RECOGNITION_HYPER_PARAMS['lrate'], help='Learning rate')
+@click.option('-r', '--lrate', show_default=True, default=RECOGNITION_HYPER_PARAMS['lr'], help='Learning rate')
 @click.option('-m', '--momentum', show_default=True, default=RECOGNITION_HYPER_PARAMS['momentum'], help='Momentum')
 @click.option('-w', '--weight-decay', show_default=True, type=float,
               default=RECOGNITION_HYPER_PARAMS['weight_decay'], help='Weight decay')
@@ -195,7 +195,7 @@ def train(ctx, batch_size, pad, line_height, output, freq, quit, epochs,
                          'lag': lag,
                          'min_delta': min_delta,
                          'optimizer': optimizer,
-                         'lrate': lrate,
+                         'lr': lrate,
                          'momentum': momentum,
                          'weight_decay': weight_decay,
                          'warmup': warmup,
