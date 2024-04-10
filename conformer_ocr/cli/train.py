@@ -177,7 +177,6 @@ def train(ctx, batch_size, pad, line_height, output, freq, quit, epochs,
     import json
     import shutil
 
-    from kraken.lib.progress import KrakenTrainProgressBar
     from conformer_ocr.dataset import TextLineDataModule
     from conformer_ocr.model import RecognitionModel
 
@@ -263,8 +262,6 @@ def train(ctx, batch_size, pad, line_height, output, freq, quit, epochs,
         raise click.UsageError('No valid training data was provided to the train command. Use `-t` or the `ground_truth` argument.')
 
     cbs = [RichModelSummary(max_depth=2)]
-    if not ctx.meta['verbose']:
-        cbs.append(KrakenTrainProgressBar(leave=True))
 
     checkpoint_callback = ModelCheckpoint(dirpath=output, save_top_k=5, monitor='val_metric', mode='max')
     cbs.append(checkpoint_callback)
