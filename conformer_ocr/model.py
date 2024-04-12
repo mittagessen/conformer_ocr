@@ -103,23 +103,24 @@ class RecognitionModel(pl.LightningModule):
             torch.multiprocessing.set_sharing_strategy('file_system')
 
         logger.info(f'Creating conformer model with {num_classes} outputs')
-        self.encoder = ConformerEncoder(in_channels=1,
-                                        input_dim=height,
-                                        encoder_dim=encoder_dim,
-                                        num_layers=num_encoder_layers,
-                                        num_attention_heads=num_attention_heads,
-                                        feed_forward_expansion_factor=feed_forward_expansion_factor,
-                                        conv_expansion_factor=conv_expansion_factor,
-                                        input_dropout_p=input_dropout_p,
-                                        feed_forward_dropout_p=feed_forward_dropout_p,
-                                        attention_dropout_p=attention_dropout_p,
-                                        conv_dropout_p=conv_dropout_p,
-                                        conv_kernel_size=conv_kernel_size,
-                                        half_step_residual=half_step_residual,
-                                        subsampling_conv_channels=subsampling_conv_channels,
-                                        subsampling_factor=subsampling_factor)
-        self.decoder = nn.Linear(encoder_dim, num_classes, bias=False)
-        self.nn = nn.Sequential(self.encoder, self.decoder)
+        encoder = ConformerEncoder(in_channels=1,
+                                   input_dim=height,
+                                   encoder_dim=encoder_dim,
+                                   num_layers=num_encoder_layers,
+                                   num_attention_heads=num_attention_heads,
+                                   feed_forward_expansion_factor=feed_forward_expansion_factor,
+                                   conv_expansion_factor=conv_expansion_factor,
+                                   input_dropout_p=input_dropout_p,
+                                   feed_forward_dropout_p=feed_forward_dropout_p,
+                                   attention_dropout_p=attention_dropout_p,
+                                   conv_dropout_p=conv_dropout_p,
+                                   conv_kernel_size=conv_kernel_size,
+                                   half_step_residual=half_step_residual,
+                                   subsampling_conv_channels=subsampling_conv_channels,
+                                   subsampling_factor=subsampling_factor)
+        decoder = nn.Linear(encoder_dim, num_classes, bias=False)
+        self.nn = nn.ModuleDict({'encoder': encoder,
+                                 'decoder': decoder})
 
         # loss
         self.criterion = nn.CTCLoss(reduction='none', zero_infinity=True)
@@ -128,15 +129,15 @@ class RecognitionModel(pl.LightningModule):
         self.val_wer = WordErrorRate()
 
     def forward(self, x, seq_lens=None):
-        encoder_outputs, encoder_lens = self.encoder(x, seq_lens)
-        return self.decoder(encoder_outputs), encoder_lens
+        encoder_outputs, encoder_lens = self.nn['encoder'](x, seq_lens)
+        return self.nn['decoder'](encoder_outputs), encoder_lens
 
     def training_step(self, batch, batch_idx):
         input, target = batch['image'], batch['target']
         input = input.squeeze(1).transpose(1, 2)
         seq_lens, label_lens = batch['seq_lens'], batch['target_lens']
-        encoder_outputs, encoder_lens = self.encoder(input, seq_lens)
-        probits = self.decoder(encoder_outputs)
+        encoder_outputs, encoder_lens = self.nn['encoder'](input, seq_lens)
+        probits = self.nn['decoder'](encoder_outputs)
         logits = nn.functional.log_softmax(probits, dim=-1)
 
         # NCW -> WNC
@@ -151,8 +152,8 @@ class RecognitionModel(pl.LightningModule):
     def validation_step(self, batch, batch_idx):
         input = batch['image'].squeeze(1).transpose(1, 2)
         seq_lens, label_lens = batch['seq_lens'], batch['target_lens']
-        encoder_outputs, encoder_lens = self.encoder(input, seq_lens)
-        o = self.decoder(encoder_outputs).transpose(1, 2).cpu().float().numpy()
+        encoder_outputs, encoder_lens = self.nn['encoder'](input, seq_lens)
+        o = self.nn['decoder'](encoder_outputs).transpose(1, 2).cpu().float().numpy()
 
         dec_strs = []
         pred = []
