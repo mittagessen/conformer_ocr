@@ -44,7 +44,7 @@ Image.MAX_IMAGE_PIXELS = 20000 ** 2
               help='Select device to use (cpu, cuda:0, cuda:1, ...)')
 @click.option('--precision',
               show_default=True,
-              default='bf16',
+              default='32',
               type=click.Choice(['64', '32', 'bf16', '16']),
               help='Numerical precision to use for training. Default is 32-bit single-point precision.')
 @click.option('-2', '--autocast', default=False, show_default=True, flag_value=True,
