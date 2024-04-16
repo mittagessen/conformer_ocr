@@ -148,8 +148,8 @@ class TransducerRecognitionModel(pl.LightningModule):
 
         loss = self.criterion(logits=logits,
                               targets=batch['target'],
-                              logit_lengths=encoder_lens,
-                              target_lengths=batch['target_lens'])
+                              logit_lengths=encoder_lens.int(),
+                              target_lengths=batch['target_lens'].int())
 
         self.log('train_loss', loss, on_step=True, on_epoch=False, prog_bar=False, logger=True)
         return loss
