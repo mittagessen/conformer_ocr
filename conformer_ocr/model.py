@@ -134,15 +134,22 @@ class TransducerRecognitionModel(pl.LightningModule):
         return self.nn(x, seq_lens)
 
     def training_step(self, batch, batch_idx):
-        logits, encoder_lens, target_lens, _ = self.nn(batch['image'].squeeze(1).transpose(1, 2),
-                                                       batch['seq_lens'],
-                                                       batch['target'],
-                                                       batch['target_lens'])
+        # prepend blank token to 
+        targets = batch['target']
+        prepended_targets = targets.new_empty([targets.size(0), targets.size(1) + 1])
+        prepended_targets[:, 1:] = targets
+        prepended_targets[:, 0] = 0
+        prepended_target_lens = batch['target_lens'] + 1
+
+        logits, encoder_lens, _, _ = self.nn(batch['image'].squeeze(1).transpose(1, 2),
+                                             batch['seq_lens'],
+                                             prepended_targets,
+                                             prepended_target_lens)
 
         loss = self.criterion(logits=logits,
-                              targets=batch['target'][:, 1:].contiguous().int(),
-                              logit_lengths=encoder_lens.int(),
-                              target_lengths=target_lens.int())
+                              targets=batch['target'],
+                              logit_lengths=encoder_lens,
+                              target_lengths=batch['target_lens'])
 
         self.log('train_loss', loss, on_step=True, on_epoch=False, prog_bar=False, logger=True)
         return loss
