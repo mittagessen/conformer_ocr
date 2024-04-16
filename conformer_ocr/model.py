@@ -156,34 +156,53 @@ class TransducerRecognitionModel(pl.LightningModule):
         return loss
 
     def validation_step(self, batch, batch_idx):
-        o, encoder_lens = self.nn.transcribe(batch['image'].squeeze(1).transpose(1, 2),
-                                             batch['seq_lens'])
-        o = o.transpose(1, 2).cpu().float().numpy()
+        targets = batch['target']
+        prepended_targets = targets.new_empty([targets.size(0), targets.size(1) + 1])
+        prepended_targets[:, 1:] = targets
+        prepended_targets[:, 0] = 0
+        prepended_target_lens = batch['target_lens'] + 1
 
-        pred = []
-        for seq, seq_len in zip(o, encoder_lens):
-            locs = greedy_decoder(seq[:, :seq_len])
-            pred.append(''.join(x[0] for x in self.trainer.datamodule.val_codec.decode(locs)))
-        decoded_targets = []
-        for target, tlen in zip(batch['target'], batch['target_lens']):
-            decoded_targets.append(''.join([x[0] for x in self.trainer.datamodule.val_codec.decode([(x, 0, 0, 0) for x in target[:tlen]])]))
-        self.val_cer.update(pred, decoded_targets)
-        self.val_wer.update(pred, decoded_targets)
+        logits, encoder_lens, _, _ = self.nn(batch['image'].squeeze(1).transpose(1, 2),
+                                             batch['seq_lens'],
+                                             prepended_targets,
+                                             prepended_target_lens)
 
-    def on_validation_epoch_end(self):
-        accuracy = 1.0 - self.val_cer.compute()
-        word_accuracy = 1.0 - self.val_wer.compute()
+        loss = self.criterion(logits=logits,
+                              targets=batch['target'],
+                              logit_lengths=encoder_lens.int(),
+                              target_lengths=batch['target_lens'].int())
 
-        if accuracy > self.best_metric:
-            logger.debug(f'Updating best metric from {self.best_metric} ({self.best_epoch}) to {accuracy} ({self.current_epoch})')
-            self.best_epoch = self.current_epoch
-            self.best_metric = accuracy
-        logger.info(f'validation run: total chars {self.val_cer.total} errors {self.val_cer.errors} accuracy {accuracy}')
-        self.log('val_accuracy', accuracy, on_step=False, on_epoch=True, prog_bar=True, logger=True)
-        self.log('val_word_accuracy', word_accuracy, on_step=False, on_epoch=True, prog_bar=True, logger=True)
-        self.log('val_metric', accuracy, on_step=False, on_epoch=True, prog_bar=False, logger=True)
-        self.val_cer.reset()
-        self.val_wer.reset()
+        self.log('val_loss', loss, on_step=True, on_epoch=True, prog_bar=True)
+        return loss
+
+        #o, encoder_lens = self.nn.transcribe(batch['image'].squeeze(1).transpose(1, 2),
+        #                                     batch['seq_lens'])
+        #o = o.transpose(1, 2).cpu().float().numpy()
+
+        #pred = []
+        #for seq, seq_len in zip(o, encoder_lens):
+        #    locs = greedy_decoder(seq[:, :seq_len])
+        #    pred.append(''.join(x[0] for x in self.trainer.datamodule.val_codec.decode(locs)))
+        #decoded_targets = []
+        #for target, tlen in zip(batch['target'], batch['target_lens']):
+        #    decoded_targets.append(''.join([x[0] for x in self.trainer.datamodule.val_codec.decode([(x, 0, 0, 0) for x in target[:tlen]])]))
+        #self.val_cer.update(pred, decoded_targets)
+        #self.val_wer.update(pred, decoded_targets)
+
+#    def on_validation_epoch_end(self):
+#        accuracy = 1.0 - self.val_cer.compute()
+#        word_accuracy = 1.0 - self.val_wer.compute()
+#
+#        if accuracy > self.best_metric:
+#            logger.debug(f'Updating best metric from {self.best_metric} ({self.best_epoch}) to {accuracy} ({self.current_epoch})')
+#            self.best_epoch = self.current_epoch
+#            self.best_metric = accuracy
+#        logger.info(f'validation run: total chars {self.val_cer.total} errors {self.val_cer.errors} accuracy {accuracy}')
+#        self.log('val_accuracy', accuracy, on_step=False, on_epoch=True, prog_bar=True, logger=True)
+#        self.log('val_word_accuracy', word_accuracy, on_step=False, on_epoch=True, prog_bar=True, logger=True)
+#        self.log('val_metric', accuracy, on_step=False, on_epoch=True, prog_bar=False, logger=True)
+#        self.val_cer.reset()
+#        self.val_wer.reset()
 
     def save_checkpoint(self, filename):
         self.trainer.save_checkpoint(filename)
