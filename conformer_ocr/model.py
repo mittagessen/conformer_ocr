@@ -64,7 +64,8 @@ class TransducerRecognitionModel(pl.LightningModule):
                  cos_min_lr=1e-4,
                  warmup=15000,
                  height=96,
-                 encoder_dim=512,
+                 encoder_input_dim=256,
+                 encoder_ffn_dim=1024,
                  num_encoder_layers=18,
                  num_attention_heads=8,
                  feed_forward_expansion_factor=4,
@@ -109,8 +110,8 @@ class TransducerRecognitionModel(pl.LightningModule):
         self.nn = conformer_rnnt_model(input_dim=height,
                                        encoding_dim=decoder_output_dim,
                                        time_reduction_stride=subsampling_factor,
-                                       conformer_input_dim=encoder_dim,
-                                       conformer_ffn_dim=encoder_dim,
+                                       conformer_input_dim=encoder_input_dim,
+                                       conformer_ffn_dim=encoder_ffn_dim,
                                        conformer_num_layers=num_encoder_layers,
                                        conformer_num_heads=num_attention_heads,
                                        conformer_depthwise_conv_kernel_size=conv_kernel_size,
@@ -119,10 +120,10 @@ class TransducerRecognitionModel(pl.LightningModule):
                                        symbol_embedding_dim=decoder_hidden_state_dim,
                                        num_lstm_layers=2,
                                        lstm_hidden_dim=decoder_hidden_state_dim,
-                                       lstm_layer_norm=False,
-                                       lstm_layer_norm_epsilon=0.1,
+                                       lstm_layer_norm=True,
+                                       lstm_layer_norm_epsilon=1e-5,
                                        lstm_dropout=decoder_dropout_p,
-                                       joiner_activation='relu')
+                                       joiner_activation='tanh')
 
         # loss
         self.criterion = RNNTLoss(blank=0)
