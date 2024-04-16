@@ -144,13 +144,6 @@ logger = logging.getLogger('conformer_ocr')
               help='File(s) with paths to evaluation data. Overrides the `-p` parameter')
 @click.option('--workers', show_default=True, default=1, type=click.IntRange(1), help='Number of worker processes.')
 @click.option('--threads', show_default=True, default=1, type=click.IntRange(1), help='Maximum size of OpenMP/BLAS thread pool.')
-@click.option('-f', '--format-type', type=click.Choice(['path', 'xml', 'alto', 'page', 'binary']), default='path',
-              help='Sets the training data format. In ALTO and PageXML mode all '
-              'data is extracted from xml files containing both line definitions and a '
-              'link to source images. In `path` mode arguments are image files '
-              'sharing a prefix up to the last extension with `.gt.txt` text files '
-              'containing the transcription. In binary mode files are datasets '
-              'files containing pre-extracted text lines.')
 @click.option('--augment/--no-augment',
               show_default=True,
               default=RECOGNITION_HYPER_PARAMS['augment'],
@@ -161,7 +154,7 @@ def train(ctx, load, batch_size, pad, line_height, output, freq, quit, epochs,
           warmup, freeze_backbone, schedule, gamma, step_size, sched_patience,
           cos_max, cos_min_lr, partition, fixed_splits, normalization,
           normalize_whitespace, codec, reorder, base_dir, training_files,
-          evaluation_files, workers, threads, format_type, augment,
+          evaluation_files, workers, threads, augment,
           ground_truth):
     """
     Trains a model from image-text pairs.
@@ -179,7 +172,7 @@ def train(ctx, load, batch_size, pad, line_height, output, freq, quit, epochs,
     import shutil
 
     from conformer_ocr.dataset import TextLineDataModule
-    from conformer_ocr.model import RecognitionModel
+    from conformer_ocr.model import TransducerRecognitionModel
 
     from pytorch_lightning import Trainer
     from pytorch_lightning.callbacks import RichModelSummary, ModelCheckpoint, RichProgressBar
@@ -251,17 +244,16 @@ def train(ctx, load, batch_size, pad, line_height, output, freq, quit, epochs,
                                      num_workers=workers,
                                      reorder=reorder,
                                      binary_dataset_split=fixed_splits,
-                                     format_type=format_type,
                                      codec=codec)
 
     if load:
         message('Loading model.')
-        model = RecognitionModel.load_from_checkpoint(load, **hyper_params)
+        model = TransducerRecognitionModel.load_from_checkpoint(load, **hyper_params)
     else:
         message('Initializing model.')
-        model = RecognitionModel(**hyper_params,
-                                 num_classes=data_module.num_classes,
-                                 batches_per_epoch=len(data_module.train_dataloader()))
+        model = TransducerRecognitionModel(**hyper_params,
+                                           num_classes=data_module.num_classes,
+                                           batches_per_epoch=len(data_module.train_dataloader()))
 
     if len(data_module.train_set) == 0:
         raise click.UsageError('No valid training data was provided to the train command. Use `-t` or the `ground_truth` argument.')

@@ -59,4 +59,7 @@ RECOGNITION_HYPER_PARAMS = {'pad': 16,
                             'half_step_residual': True,
                             'subsampling_conv_channels': 256,
                             'subsampling_factor': 8,
+                            'decoder_hidden_state_dim': 640,
+                            'decoder_output_dim': 640,
+                            'decoder_dropout_p': 0.1,
                             }

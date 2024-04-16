@@ -29,9 +29,9 @@ from torch import nn
 from pytorch_lightning.callbacks import Callback, EarlyStopping
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 from torch.optim import lr_scheduler
+from torchaudio.transforms import RNNTLoss
+from torchaudio.prototype.models import conformer_rnnt_model
 from torchmetrics.text import CharErrorRate, WordErrorRate
-
-from conformer_ocr.conformer.encoder import ConformerEncoder
 
 from conformer_ocr import default_specs
 
@@ -43,7 +43,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-class RecognitionModel(pl.LightningModule):
+class TransducerRecognitionModel(pl.LightningModule):
     def __init__(self,
                  num_classes: int,
                  batches_per_epoch: int = 0,
@@ -77,6 +77,9 @@ class RecognitionModel(pl.LightningModule):
                  half_step_residual=True,
                  subsampling_conv_channels=256,
                  subsampling_factor=4,
+                 decoder_hidden_state_dim=640,
+                 decoder_output_dim=640,
+                 decoder_dropout_p=0.1,
                  **kwargs):
         """
         A LightningModule encapsulating the training setup for a text
@@ -103,67 +106,59 @@ class RecognitionModel(pl.LightningModule):
             torch.multiprocessing.set_sharing_strategy('file_system')
 
         logger.info(f'Creating conformer model with {num_classes} outputs')
-        encoder = ConformerEncoder(in_channels=1,
-                                   input_dim=height,
-                                   encoder_dim=encoder_dim,
-                                   num_layers=num_encoder_layers,
-                                   num_attention_heads=num_attention_heads,
-                                   feed_forward_expansion_factor=feed_forward_expansion_factor,
-                                   conv_expansion_factor=conv_expansion_factor,
-                                   input_dropout_p=input_dropout_p,
-                                   feed_forward_dropout_p=feed_forward_dropout_p,
-                                   attention_dropout_p=attention_dropout_p,
-                                   conv_dropout_p=conv_dropout_p,
-                                   conv_kernel_size=conv_kernel_size,
-                                   half_step_residual=half_step_residual,
-                                   subsampling_conv_channels=subsampling_conv_channels,
-                                   subsampling_factor=subsampling_factor)
-        decoder = nn.Linear(encoder_dim, num_classes, bias=False)
-        self.nn = nn.ModuleDict({'encoder': encoder,
-                                 'decoder': decoder})
+        self.nn = conformer_rnnt_model(input_dim=height,
+                                       encoding_dim=decoder_output_dim,
+                                       time_reduction_stride=subsampling_factor,
+                                       conformer_input_dim=encoder_dim,
+                                       conformer_ffn_dim=encoder_dim,
+                                       conformer_num_layers=num_encoder_layers,
+                                       conformer_num_heads=num_attention_heads,
+                                       conformer_depthwise_conv_kernel_size=conv_kernel_size,
+                                       conformer_dropout=conv_dropout_p,
+                                       num_symbols=num_classes,
+                                       symbol_embedding_dim=decoder_hidden_state_dim,
+                                       num_lstm_layers=2,
+                                       lstm_hidden_dim=decoder_hidden_state_dim,
+                                       lstm_layer_norm=False,
+                                       lstm_layer_norm_epsilon=0.1,
+                                       lstm_dropout=decoder_dropout_p,
+                                       joiner_activation='relu')
 
         # loss
-        self.criterion = nn.CTCLoss(reduction='sum', zero_infinity=True)
+        self.criterion = RNNTLoss(blank=0)
 
         self.val_cer = CharErrorRate()
         self.val_wer = WordErrorRate()
 
     def forward(self, x, seq_lens=None):
-        encoder_outputs, encoder_lens = self.nn['encoder'](x, seq_lens)
-        return self.nn['decoder'](encoder_outputs), encoder_lens
+        return self.nn(x, seq_lens)
 
     def training_step(self, batch, batch_idx):
-        input, target = batch['image'], batch['target']
-        input = input.squeeze(1).transpose(1, 2)
-        seq_lens, label_lens = batch['seq_lens'], batch['target_lens']
-        encoder_outputs, encoder_lens = self.nn['encoder'](input, seq_lens)
-        probits = self.nn['decoder'](encoder_outputs)
-        logits = nn.functional.log_softmax(probits, dim=-1)
+        logits, encoder_lens = self.nn(batch['image'].squeeze(1).transpose(1, 2),
+                                       batch['seq_lens'],
+                                       batch['target'],
+                                       batch['target_lens'])
 
-        # NCW -> WNC
-        loss = self.criterion(logits.transpose(0, 1),  # type: ignore
-                              target,
-                              encoder_lens,
-                              label_lens)
+        loss = self.criterion(logits=logits,
+                              targets=batch['target'][:, 1:].contiguous().int(),
+                              input_lengths=encoder_lens.int(),
+                              target_lengths=batch['target_lens'].int())
+
         self.log('train_loss', loss, on_step=True, on_epoch=False, prog_bar=False, logger=True)
         return loss
 
     def validation_step(self, batch, batch_idx):
-        input = batch['image'].squeeze(1).transpose(1, 2)
-        seq_lens, label_lens = batch['seq_lens'], batch['target_lens']
-        encoder_outputs, encoder_lens = self.nn['encoder'](input, seq_lens)
-        o = self.nn['decoder'](encoder_outputs).transpose(1, 2).cpu().float().numpy()
+        o, encoder_lens = self.nn.transcribe(batch['image'].squeeze(1).transpose(1, 2),
+                                             batch['seq_lens'])
+        o = o.transpose(1, 2).cpu().float().numpy()
 
-        dec_strs = []
         pred = []
         for seq, seq_len in zip(o, encoder_lens):
             locs = greedy_decoder(seq[:, :seq_len])
             pred.append(''.join(x[0] for x in self.trainer.datamodule.val_codec.decode(locs)))
-        idx = 0
         decoded_targets = []
-        for offset in batch['target_lens']:
-            decoded_targets.append(''.join([x[0] for x in self.trainer.datamodule.val_codec.decode([(x, 0, 0, 0) for x in batch['target'][idx:idx+offset]])]))
-            idx += offset
+        for target, tlen in zip(batch['target'], batch['target_lens']):
+            decoded_targets.append(''.join([x[0] for x in self.trainer.datamodule.val_codec.decode([(x, 0, 0, 0) for x in target[:tlen]])]))
         self.val_cer.update(pred, decoded_targets)
         self.val_wer.update(pred, decoded_targets)
 

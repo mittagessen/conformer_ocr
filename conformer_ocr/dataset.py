@@ -21,12 +21,13 @@ from typing import (TYPE_CHECKING, Any, Callable, List, Literal, Optional, Seque
 import torch
 import pytorch_lightning as pl
 
+from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import DataLoader, Subset, random_split
 
 from kraken.containers import BaselineLine, Segmentation
 from kraken.lib.codec import PytorchCodec
 from kraken.lib.dataset import (ArrowIPCRecognitionDataset, PolygonGTDataset,
-                                ImageInputTransforms, collate_sequences)
+                                ImageInputTransforms)
 
 if TYPE_CHECKING:
     from os import PathLike
@@ -50,6 +51,17 @@ def _validation_worker_init_fn(worker_id):
     logging.getLogger("lightning_fabric.utilities.seed").setLevel(level)
 
 
+def collate_sequences(batch):
+    """
+    Sorts and pads sequences.
+    """
+    seqs = pad_sequence([x['image'].transpose(0, 2) for x in batch], batch_first=True).transpose(1, 3)
+    labels = pad_sequence([x['target'] for x in batch], batch_first=True)
+    seq_lens = torch.LongTensor([seq.shape[2] for seq in seqs])
+    label_lens = torch.LongTensor([len(x['target']) for x in batch])
+    return {'image': seqs, 'target': labels, 'seq_lens': seq_lens, 'target_lens': label_lens}
+
+
 class TextLineDataModule(pl.LightningDataModule):
     def __init__(self,
                  training_data: Sequence[Union[str, 'PathLike']],
@@ -61,7 +73,6 @@ class TextLineDataModule(pl.LightningDataModule):
                  num_workers: int = 8,
                  partition: Optional[float] = 0.95,
                  codec: Optional[PytorchCodec] = None,
-                 format_type: Literal['alto', 'page', 'xml', 'binary'] = 'xml',
                  binary_dataset_split: bool = False,
                  reorder: Union[bool, str] = True,
                  normalize_whitespace: bool = True,
@@ -70,41 +81,27 @@ class TextLineDataModule(pl.LightningDataModule):
 
         self.save_hyperparameters()
 
-        if format_type in ['xml', 'page', 'alto']:
-            DatasetClass = PolygonGTDataset
-            logger.info(f'Parsing {len(training_data)} XML files for training data')
-            training_data = [{'page': XMLPage(file, format_type).to_container()} for file in training_data]
-            if evaluation_data:
-                logger.info(f'Parsing {len(evaluation_data)} XML files for validation data')
-                evaluation_data = [{'page': XMLPage(file, format_type).to_container()} for file in evaluation_data]
-            if binary_dataset_split:
-                logger.warning('Internal binary dataset splits are enabled but using non-binary dataset files. Will be ignored.')
-                binary_dataset_split = False
-        elif format_type == 'binary':
-            DatasetClass = ArrowIPCRecognitionDataset
-            logger.info(f'Got {len(training_data)} binary dataset files for training data')
-            training_data = [{'file': file} for file in training_data]
-            if evaluation_data:
-                logger.info(f'Got {len(evaluation_data)} binary dataset files for validation data')
-                evaluation_data = [{'file': file} for file in evaluation_data]
-        else:
-            raise ValueError(f'format_type {format_type} not in [alto, page, xml, binary].')
+        logger.info(f'Got {len(training_data)} binary dataset files for training data')
+        training_data = [{'file': file} for file in training_data]
+        if evaluation_data:
+            logger.info(f'Got {len(evaluation_data)} binary dataset files for validation data')
+            evaluation_data = [{'file': file} for file in evaluation_data]
 
         self.transforms = ImageInputTransforms(1, height, 0, 1, (pad, 0), valid_norm=False)
 
         if evaluation_data:
-            train_set = self._build_dataset(DatasetClass, training_data)
+            train_set = self._build_dataset(ArrowIPCRecognitionDataset, training_data)
             self.train_set = Subset(train_set, range(len(train_set)))
-            val_set = self._build_dataset(DatasetClass, evaluation_data)
+            val_set = self._build_dataset(ArrowIPCRecognitionDataset, evaluation_data)
             self.val_set = Subset(val_set, range(len(val_set)))
         elif binary_dataset_split:
-            train_set = self._build_dataset(DatasetClass, training_data, split_filter='train')
+            train_set = self._build_dataset(ArrowIPCRecognitionDataset, training_data, split_filter='train')
             self.train_set = Subset(train_set, range(len(train_set)))
-            val_set = self._build_dataset(DatasetClass, training_data, split_filter='validation')
+            val_set = self._build_dataset(ArrowIPCRecognitionDataset, training_data, split_filter='validation')
             self.val_set = Subset(val_set, range(len(val_set)))
             logger.info(f'Found {len(self.train_set)} (train) / {len(self.val_set)} (val) samples in pre-encoded dataset')
         else:
-            train_set = self._build_dataset(DatasetClass, training_data)
+            train_set = self._build_dataset(ArrowIPCRecognitionDataset, training_data)
             train_len = int(len(train_set)*partition)
             val_len = len(train_set) - train_len
             logger.info(f'No explicit validation data provided. Splitting off '
@@ -148,7 +145,7 @@ class TextLineDataModule(pl.LightningDataModule):
                 dataset.add(**sample)
             except Exception as e:
                 logger.warning(str(e))
-        if self.hparams.format_type == 'binary' and self.hparams.normalization:
+        if self.hparams.normalization:
             logger.debug('Rebuilding dataset using unicode normalization')
             dataset.rebuild_alphabet()
 
