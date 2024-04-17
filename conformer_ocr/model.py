@@ -172,7 +172,7 @@ class TransducerRecognitionModel(pl.LightningModule):
                               logit_lengths=encoder_lens.int(),
                               target_lengths=batch['target_lens'].int())
 
-        self.log('val_loss', loss, on_step=True, on_epoch=True, prog_bar=True)
+        self.log('val_metric', loss, on_step=True, on_epoch=True, prog_bar=True)
         return loss
 
         #o, encoder_lens = self.nn.transcribe(batch['image'].squeeze(1).transpose(1, 2),
