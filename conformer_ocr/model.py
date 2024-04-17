@@ -165,7 +165,7 @@ class TransducerRecognitionModel(pl.LightningModule):
         targets = batch['target']
         prepended_targets = targets.new_empty([targets.size(0), targets.size(1) + 1])
         prepended_targets[:, 1:] = targets
-        prepended_targets[:, 0] = 0
+        prepended_targets[:, 0] = self.blank_idx
         prepended_target_lens = batch['target_lens'] + 1
 
         logits, encoder_lens, _, _ = self.nn(batch['image'].squeeze(1).transpose(1, 2),
