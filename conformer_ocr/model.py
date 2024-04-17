@@ -30,11 +30,12 @@ from pytorch_lightning.callbacks import Callback, EarlyStopping
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 from torch.optim import lr_scheduler
 from torchaudio.transforms import RNNTLoss
-from torchaudio.prototype.models import conformer_rnnt_model
+from torchaudio.models import emformer_rnnt_base, RNNTBeamSearch
 from torchmetrics.text import CharErrorRate, WordErrorRate
 
 from conformer_ocr import default_specs
 
+from importlib_resources import files
 from kraken.lib.ctc_decoder import greedy_decoder
 
 if TYPE_CHECKING:
@@ -107,29 +108,34 @@ class TransducerRecognitionModel(pl.LightningModule):
             torch.multiprocessing.set_sharing_strategy('file_system')
 
         logger.info(f'Creating conformer model with {num_classes} outputs')
-        self.nn = conformer_rnnt_model(input_dim=height,
-                                       encoding_dim=decoder_output_dim,
-                                       time_reduction_stride=subsampling_factor,
-                                       conformer_input_dim=encoder_input_dim,
-                                       conformer_ffn_dim=encoder_ffn_dim,
-                                       conformer_num_layers=num_encoder_layers,
-                                       conformer_num_heads=num_attention_heads,
-                                       conformer_depthwise_conv_kernel_size=conv_kernel_size,
-                                       conformer_dropout=conv_dropout_p,
-                                       num_symbols=num_classes,
-                                       symbol_embedding_dim=decoder_hidden_state_dim,
-                                       num_lstm_layers=2,
-                                       lstm_hidden_dim=decoder_hidden_state_dim,
-                                       lstm_layer_norm=True,
-                                       lstm_layer_norm_epsilon=1e-5,
-                                       lstm_dropout=decoder_dropout_p,
-                                       joiner_activation='tanh')
+        self.nn = emformer_rnnt_base(num_symbols=num_classes+1)
+        self.nn.transcriber.load_state_dict(torch.load(files('conformer_ocr').joinpath('emformer_encoder.pkl')))
+
+        #self.nn = conformer_rnnt_model(input_dim=height,
+        #                               encoding_dim=decoder_output_dim,
+        #                               time_reduction_stride=subsampling_factor,
+        #                               conformer_input_dim=encoder_input_dim,
+        #                               conformer_ffn_dim=encoder_ffn_dim,
+        #                               conformer_num_layers=num_encoder_layers,
+        #                               conformer_num_heads=num_attention_heads,
+        #                               conformer_depthwise_conv_kernel_size=conv_kernel_size,
+        #                               conformer_dropout=conv_dropout_p,
+        #                               num_symbols=num_classes,
+        #                               symbol_embedding_dim=decoder_hidden_state_dim,
+        #                               num_lstm_layers=2,
+        #                               lstm_hidden_dim=decoder_hidden_state_dim,
+        #                               lstm_layer_norm=True,
+        #                               lstm_layer_norm_epsilon=1e-5,
+        #                               lstm_dropout=decoder_dropout_p,
+        #                               joiner_activation='tanh')
 
         # loss
-        self.criterion = RNNTLoss(blank=0)
+        self.criterion = RNNTLoss(reduction="sum", clamp=1.0)
 
         self.val_cer = CharErrorRate()
         self.val_wer = WordErrorRate()
+
+        self.blank_idx = num_classes
 
     def forward(self, x, seq_lens=None):
         return self.nn(x, seq_lens)
@@ -139,7 +145,7 @@ class TransducerRecognitionModel(pl.LightningModule):
         targets = batch['target']
         prepended_targets = targets.new_empty([targets.size(0), targets.size(1) + 1])
         prepended_targets[:, 1:] = targets
-        prepended_targets[:, 0] = 0
+        prepended_targets[:, 0] = self.blank_idx
         prepended_target_lens = batch['target_lens'] + 1
 
         logits, encoder_lens, _, _ = self.nn(batch['image'].squeeze(1).transpose(1, 2),
