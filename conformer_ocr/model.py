@@ -173,7 +173,7 @@ class RecognitionModel(pl.LightningModule):
             idx += offset
         self.val_cer.update(pred, decoded_targets)
         self.val_wer.update(pred, decoded_targets)
-        self.val_loss.update(loss)
+        self.val_loss.update(o['loss'])
 
     def on_validation_epoch_end(self):
         accuracy = 1.0 - self.val_cer.compute()
