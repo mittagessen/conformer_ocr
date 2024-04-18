@@ -30,6 +30,7 @@ from pytorch_lightning.callbacks import Callback, EarlyStopping
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 from torch.optim import lr_scheduler
 from torchmetrics.text import CharErrorRate, WordErrorRate
+from torchmetrics.aggregation import MeanMetric
 
 from conformer_ocr.conformer.encoder import ConformerEncoder
 
@@ -118,7 +119,7 @@ class RecognitionModel(pl.LightningModule):
                                    half_step_residual=half_step_residual,
                                    subsampling_conv_channels=subsampling_conv_channels,
                                    subsampling_factor=subsampling_factor)
-        decoder = nn.Linear(encoder_dim, num_classes, bias=False)
+        decoder = nn.Linear(encoder_dim, num_classes, bias=True)
         self.nn = nn.ModuleDict({'encoder': encoder,
                                  'decoder': decoder})
 
@@ -127,6 +128,7 @@ class RecognitionModel(pl.LightningModule):
 
         self.val_cer = CharErrorRate()
         self.val_wer = WordErrorRate()
+        self.val_loss = MeanMetric()
 
     def forward(self, x, seq_lens=None):
         encoder_outputs, encoder_lens = self.nn['encoder'](x, seq_lens)
@@ -153,6 +155,10 @@ class RecognitionModel(pl.LightningModule):
         seq_lens, label_lens = batch['seq_lens'], batch['target_lens']
         encoder_outputs, encoder_lens = self.nn['encoder'](input, seq_lens)
         o = self.nn['decoder'](encoder_outputs).transpose(1, 2).cpu().float().numpy()
+        loss = self.criterion(logits.transpose(0, 1),  # type: ignore
+                              target,
+                              encoder_lens,
+                              label_lens)
 
         dec_strs = []
         pred = []
@@ -166,6 +172,7 @@ class RecognitionModel(pl.LightningModule):
             idx += offset
         self.val_cer.update(pred, decoded_targets)
         self.val_wer.update(pred, decoded_targets)
+        self.val_loss.update(loss)
 
     def on_validation_epoch_end(self):
         accuracy = 1.0 - self.val_cer.compute()
@@ -178,9 +185,12 @@ class RecognitionModel(pl.LightningModule):
         logger.info(f'validation run: total chars {self.val_cer.total} errors {self.val_cer.errors} accuracy {accuracy}')
         self.log('val_accuracy', accuracy, on_step=False, on_epoch=True, prog_bar=True, logger=True)
         self.log('val_word_accuracy', word_accuracy, on_step=False, on_epoch=True, prog_bar=True, logger=True)
+        self.log('val_loss', self.val_mean.compute(), on_step=False, on_epoch=True, prog_bar=True, logger=True)
         self.log('val_metric', accuracy, on_step=False, on_epoch=True, prog_bar=False, logger=True)
+
         self.val_cer.reset()
         self.val_wer.reset()
+        self.val_mean.reset()
 
     def save_checkpoint(self, filename):
         self.trainer.save_checkpoint(filename)
