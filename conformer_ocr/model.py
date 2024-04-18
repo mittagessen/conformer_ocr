@@ -159,10 +159,11 @@ class RecognitionModel(pl.LightningModule):
 
     def validation_step(self, batch, batch_idx):
         o = self._step(batch)
+        probits = o['probits'].transpose(1, 2).cpu().float().numpy()
 
         dec_strs = []
         pred = []
-        for seq, seq_len in zip(o['probits'], o['output_lens']):
+        for seq, seq_len in zip(probits, o['output_lens']):
             locs = greedy_decoder(seq[:, :seq_len])
             pred.append(''.join(x[0] for x in self.trainer.datamodule.val_codec.decode(locs)))
         idx = 0
