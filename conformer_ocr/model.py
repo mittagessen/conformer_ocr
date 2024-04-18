@@ -134,7 +134,7 @@ class RecognitionModel(pl.LightningModule):
         encoder_outputs, encoder_lens = self.nn['encoder'](x, seq_lens)
         return self.nn['decoder'](encoder_outputs), encoder_lens
 
-    def training_step(self, batch, batch_idx):
+    def _step(batch):
         input, target = batch['image'], batch['target']
         input = input.squeeze(1).transpose(1, 2)
         seq_lens, label_lens = batch['seq_lens'], batch['target_lens']
@@ -147,22 +147,22 @@ class RecognitionModel(pl.LightningModule):
                               target,
                               encoder_lens,
                               label_lens)
+        return {'loss': loss,
+                'probits': probits,
+                'output_lens': encoder_lens}
+
+    def training_step(self, batch, batch_idx):
+        loss = self._step(batch)['loss']
+
         self.log('train_loss', loss, on_step=True, on_epoch=False, prog_bar=False, logger=True)
         return loss
 
     def validation_step(self, batch, batch_idx):
-        input = batch['image'].squeeze(1).transpose(1, 2)
-        seq_lens, label_lens = batch['seq_lens'], batch['target_lens']
-        encoder_outputs, encoder_lens = self.nn['encoder'](input, seq_lens)
-        o = self.nn['decoder'](encoder_outputs).transpose(1, 2).cpu().float().numpy()
-        loss = self.criterion(logits.transpose(0, 1),  # type: ignore
-                              target,
-                              encoder_lens,
-                              label_lens)
+        o = self._step(batch)
 
         dec_strs = []
         pred = []
-        for seq, seq_len in zip(o, encoder_lens):
+        for seq, seq_len in zip(o['probits'], o['output_lens']):
             locs = greedy_decoder(seq[:, :seq_len])
             pred.append(''.join(x[0] for x in self.trainer.datamodule.val_codec.decode(locs)))
         idx = 0
