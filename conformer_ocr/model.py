@@ -108,8 +108,25 @@ class TransducerRecognitionModel(pl.LightningModule):
             torch.multiprocessing.set_sharing_strategy('file_system')
 
         logger.info(f'Creating conformer model with {num_classes} outputs')
-        self.nn = emformer_rnnt_base(num_symbols=num_classes+1)
-        self.nn.transcriber.load_state_dict(torch.load(files('conformer_ocr').joinpath('emformer_encoder.pkl')))
+        self.nn = conformer_rnnt_model(input_dim=height,
+                                       encoding_dim=256,
+                                       time_reduction_stride=4,
+                                       conformer_input_dim=144,
+                                       conformer_ffn_dim=144,
+                                       conformer_num_layers=16,
+                                       conformer_num_heads=4,
+                                       conformer_depthwise_conv_kernel_size=31,
+                                       conformer_dropout=0.1,
+                                       num_symbols=num_classes+1,
+                                       symbol_embedding_dim=256,
+                                       num_lstm_layers=2,
+                                       lstm_hidden_dim=512,
+                                       lstm_layer_norm=True,
+                                       lstm_layer_norm_epsilon=1e-5,
+                                       lstm_dropout=0.3,
+                                       joiner_activation="tanh")
+
+        #self.nn.transcriber.load_state_dict(torch.load(files('conformer_ocr').joinpath('emformer_encoder.pkl')))
 
         #self.nn = conformer_rnnt_model(input_dim=height,
         #                               encoding_dim=decoder_output_dim,
