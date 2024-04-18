@@ -134,7 +134,7 @@ class RecognitionModel(pl.LightningModule):
         encoder_outputs, encoder_lens = self.nn['encoder'](x, seq_lens)
         return self.nn['decoder'](encoder_outputs), encoder_lens
 
-    def _step(batch):
+    def _step(self, batch):
         input, target = batch['image'], batch['target']
         input = input.squeeze(1).transpose(1, 2)
         seq_lens, label_lens = batch['seq_lens'], batch['target_lens']
