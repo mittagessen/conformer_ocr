@@ -55,9 +55,9 @@ def collate_sequences(batch):
     """
     Sorts and pads sequences.
     """
+    seq_lens = torch.LongTensor([x['image'].shape[2] for x in batch])
     seqs = pad_sequence([x['image'].transpose(0, 2) for x in batch], batch_first=True).transpose(1, 3)
     labels = pad_sequence([x['target'] for x in batch], batch_first=True)
-    seq_lens = torch.LongTensor([seq.shape[2] for seq in seqs])
     label_lens = torch.LongTensor([len(x['target']) for x in batch])
     return {'image': seqs, 'target': labels, 'seq_lens': seq_lens, 'target_lens': label_lens}
 
