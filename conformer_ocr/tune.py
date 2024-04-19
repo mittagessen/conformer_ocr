@@ -76,7 +76,7 @@ def train_model(trial: 'optuna.trial.Trial',
 @click.option('--database', show_default=True, default='sqlite:///cocr.db', help='optuna SQL database location')
 @click.option('-n', '--name', show_default=True, default=str(uuid.uuid4()), help='trial identifier')
 @click.option('-N', '--epochs', show_default=True, default=RECOGNITION_HYPER_PARAMS['epochs'], help='Number of epochs to train for')
-@click.option('-S', '--samples', show_default=True, default=25, help='Number of samples')
+@click.option('-S', '--samples', show_default=True, default=100, help='Number of samples')
 @click.option('-w', '--workers', show_default=True, default=32, help='Number of dataloader workers')
 @click.option('--pruning/--no-pruning', show_default=True, default=True, help='Enables/disables trial pruning')
 @click.option('-t', '--training-files', show_default=True, default=None, multiple=True,
@@ -106,6 +106,7 @@ def cli(ctx, device, seed, database, name, epochs, samples, workers, pruning,
     import torch
     import optuna
     from optuna.trial import TrialState
+    from optuna.samplers import TPESampler
 
     torch.set_float32_matmul_precision('medium')
 
@@ -134,7 +135,7 @@ def cli(ctx, device, seed, database, name, epochs, samples, workers, pruning,
                         num_workers=workers,
                         epochs=epochs)
 
-    pruner = optuna.pruners.MedianPruner() if pruning else optuna.pruners.NopPruner()
+    pruner = optuna.pruners.HyperbandPruner() if pruning else optuna.pruners.NopPruner()
 
     print(f'database: {database} trial: {name}')
 
@@ -142,7 +143,8 @@ def cli(ctx, device, seed, database, name, epochs, samples, workers, pruning,
                                 pruner=pruner,
                                 study_name=name,
                                 storage=database,
-                                load_if_exists=True)
+                                load_if_exists=True,
+                                sampler=TPESampler(constant_liar=True))
     study.optimize(objective, n_trials=samples)
 
     print("Number of finished trials: {}".format(len(study.trials)))
