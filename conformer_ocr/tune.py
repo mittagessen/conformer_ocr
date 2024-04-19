@@ -11,7 +11,8 @@ def train_model(trial: 'optuna.trial.Trial',
                 num_workers,
                 format_type,
                 training_data,
-                evaluation_data) -> float:
+                evaluation_data,
+                epochs) -> float:
 
     from conformer_ocr.dataset import TextLineDataModule
     from conformer_ocr.model import RecognitionModel
@@ -21,13 +22,18 @@ def train_model(trial: 'optuna.trial.Trial',
     from threadpoolctl import threadpool_limits
 
     hyper_params = RECOGNITION_HYPER_PARAMS.copy()
-
-    hyper_params['warmup'] = trial.suggest_int('warmup', 1, 15000, log=True)
-#    hyper_params['height'] = trial.suggest_int('height', 48, 128)
-    hyper_params['lr'] = trial.suggest_loguniform('lr', 1e-8, 1e-4)
-    hyper_params['weight_decay'] = trial.suggest_loguniform('weight_decay', 1e-8, 1e-4)
-#    batch_size = trial.suggest_categorical('batch_size', [8, 16, 32])
+    hyper_params['epochs'] = epochs
+    hyper_params['cos_t_max'] = hyper_params['cos_t_max']
     batch_size = 32
+
+    hyper_params['warmup'] = trial.suggest_int('warmup', 1, 40000, log=True)
+#    hyper_params['height'] = trial.suggest_int('height', 48, 128)
+    hyper_params['lr'] = trial.suggest_loguniform('lr', 1e-8, 1e-3)
+    hyper_params['cos_min_lr'] = hyper_params['lr']/10
+    hyper_params['weight_decay'] = trial.suggest_loguniform('weight_decay', 1e-6, 1e-3)
+    hyper_params['subsampling_factor'] = trial.suggest_categorical('subsampling_factor', [2, 4, 8])
+    hyper_params['encoder_dim'] = trial.suggest_categorical('subsampling_factor', [2, 4, 8])
+
 
     data_module = TextLineDataModule(training_data=training_data,
                                      evaluation_data=evaluation_data,
@@ -45,7 +51,7 @@ def train_model(trial: 'optuna.trial.Trial',
 
     trainer = Trainer(accelerator=accelerator,
                       devices=device,
-                      precision=32,
+                      precision='bf16',
                       max_epochs=hyper_params['epochs'],
                       min_epochs=hyper_params['min_epochs'],
                       enable_progress_bar=True,
@@ -97,8 +103,11 @@ def cli(ctx, device, seed, database, name, epochs, samples, workers, pruning,
 
     from functools import partial
 
+    import torch
     import optuna
     from optuna.trial import TrialState
+
+    torch.set_float32_matmul_precision('medium')
 
     if seed:
         from pytorch_lightning import seed_everything
@@ -122,7 +131,8 @@ def cli(ctx, device, seed, database, name, epochs, samples, workers, pruning,
                         format_type=format_type,
                         training_data=ground_truth,
                         evaluation_data=evaluation_files,
-                        num_workers=workers)
+                        num_workers=workers,
+                        epochs=epochs)
 
     pruner = optuna.pruners.MedianPruner() if pruning else optuna.pruners.NopPruner()
 

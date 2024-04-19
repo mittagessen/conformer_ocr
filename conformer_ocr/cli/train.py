@@ -176,6 +176,7 @@ def train(ctx, load, batch_size, pad, line_height, output, freq, quit, epochs,
             raise click.BadOptionUsage('augment', 'augmentation needs the `albumentations` package installed.')
 
     import json
+    import torch
     import shutil
 
     from conformer_ocr.dataset import TextLineDataModule
@@ -183,6 +184,8 @@ def train(ctx, load, batch_size, pad, line_height, output, freq, quit, epochs,
 
     from pytorch_lightning import Trainer
     from pytorch_lightning.callbacks import RichModelSummary, ModelCheckpoint, RichProgressBar
+
+    torch.set_float32_matmul_precision('medium')
 
     hyper_params = RECOGNITION_HYPER_PARAMS.copy()
     hyper_params.update({'freq': freq,
