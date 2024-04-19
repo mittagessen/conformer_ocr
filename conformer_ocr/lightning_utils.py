@@ -33,7 +33,6 @@ class PyTorchLightningPruningCallback(Callback):
     """
 
     def __init__(self, trial: optuna.trial.Trial, monitor: str) -> None:
-        _imports.check()
         super().__init__()
 
         self._trial = trial

@@ -32,7 +32,7 @@ def train_model(trial: 'optuna.trial.Trial',
     hyper_params['cos_min_lr'] = hyper_params['lr']/10
     hyper_params['weight_decay'] = trial.suggest_loguniform('weight_decay', 1e-6, 1e-3)
     hyper_params['subsampling_factor'] = trial.suggest_categorical('subsampling_factor', [2, 4, 8])
-    hyper_params['encoder_dim'] = trial.suggest_categorical('subsampling_factor', [2, 4, 8])
+    hyper_params['encoder_dim'] = trial.suggest_categorical('encoder_dim', [144, 256, 320])
 
 
     data_module = TextLineDataModule(training_data=training_data,
