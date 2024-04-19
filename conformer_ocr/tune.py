@@ -24,7 +24,7 @@ def train_model(trial: 'optuna.trial.Trial',
     hyper_params = RECOGNITION_HYPER_PARAMS.copy()
     hyper_params['epochs'] = epochs
     hyper_params['cos_t_max'] = hyper_params['cos_t_max']
-    batch_size = 32
+    hyper_params['batch_size'] = 32
 
     hyper_params['warmup'] = trial.suggest_int('warmup', 1, 40000, log=True)
 #    hyper_params['height'] = trial.suggest_int('height', 48, 128)
@@ -41,7 +41,7 @@ def train_model(trial: 'optuna.trial.Trial',
                                      height=hyper_params['height'],
                                      augmentation=hyper_params['augment'],
                                      partition=0.9,
-                                     batch_size=batch_size,
+                                     batch_size=hyper_params['batch_size'],
                                      num_workers=num_workers,
                                      format_type=format_type)
 
