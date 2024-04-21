@@ -42,6 +42,7 @@ def train_model(trial: 'optuna.trial.Trial',
                                      augmentation=hyper_params['augment'],
                                      partition=0.9,
                                      batch_size=hyper_params['batch_size'],
+                                     normalization=hyper_params['normalization'],
                                      num_workers=num_workers,
                                      format_type=format_type)
 
