@@ -92,9 +92,12 @@ def train_model(trial: 'optuna.trial.Trial',
               'sharing a prefix up to the last extension with `.gt.txt` text files '
               'containing the transcription. In binary mode files are datasets '
               'files containing pre-extracted text lines.')
+@click.option('--add-default/--no-add-default', show_default=True,
+              default=True, help='Enables/disables enqueueing the default '
+              'configuration as a trial')
 @click.argument('ground_truth', nargs=-1, callback=_expand_gt, type=click.Path(exists=False, dir_okay=False))
 def cli(ctx, device, seed, database, name, epochs, samples, workers, pruning,
-        training_files, evaluation_files, format_type, ground_truth):
+        training_files, evaluation_files, format_type, ground_truth, add_default):
 
     try:
         accelerator, device = to_ptl_device(device)
@@ -145,6 +148,14 @@ def cli(ctx, device, seed, database, name, epochs, samples, workers, pruning,
                                 storage=database,
                                 load_if_exists=True,
                                 sampler=TPESampler(constant_liar=True))
+
+    if add_default:
+        study.enqueue_trial({'warmup': RECOGNITION_HYPER_PARAMS['warmup'],
+                             'lr': RECOGNITION_HYPER_PARAMS['lr'],
+                             'weight_decay': RECOGNITION_HYPER_PARAMS['weight_decay'],
+                             'subsampling_factor': RECOGNITION_HYPER_PARAMS['subsampling_factor'],
+                             'encoder_dim': RECOGNITION_HYPER_PARAMS['encoder_dim']},
+                            skip_if_exists=True)
     study.optimize(objective, n_trials=samples)
 
     print("Number of finished trials: {}".format(len(study.trials)))
