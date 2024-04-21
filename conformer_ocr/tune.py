@@ -26,7 +26,7 @@ def train_model(trial: 'optuna.trial.Trial',
     hyper_params['cos_t_max'] = hyper_params['cos_t_max']
     hyper_params['batch_size'] = 32
 
-    hyper_params['warmup'] = trial.suggest_int('warmup', 1, 40000, log=True)
+    hyper_params['warmup'] = trial.suggest_int('warmup', 10000, 50000, log=True)
 #    hyper_params['height'] = trial.suggest_int('height', 48, 128)
     hyper_params['lr'] = trial.suggest_loguniform('lr', 1e-8, 1e-3)
     hyper_params['cos_min_lr'] = hyper_params['lr']/10
@@ -138,7 +138,8 @@ def cli(ctx, device, seed, database, name, epochs, samples, workers, pruning,
                         num_workers=workers,
                         epochs=epochs)
 
-    pruner = optuna.pruners.HyperbandPruner() if pruning else optuna.pruners.NopPruner()
+    pruner = optuna.pruners.MedianPruner(n_startup_trials=10,
+                                         n_warmup_steps=50) if pruning else optuna.pruners.NopPruner()
 
     print(f'database: {database} trial: {name}')
 
