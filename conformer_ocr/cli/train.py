@@ -255,7 +255,9 @@ def train(ctx, load, batch_size, pad, line_height, output, freq, quit, epochs,
                                      reorder=reorder,
                                      binary_dataset_split=fixed_splits,
                                      format_type=format_type,
-                                     codec=codec)
+                                     codec=codec,
+                                     normalization=hyper_params['normalization'],
+                                     normalize_whitespace=hyper_params['normalize_whitespace'])
 
     if load:
         message('Loading model.')
