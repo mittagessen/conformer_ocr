@@ -22,11 +22,11 @@ from typing import (TYPE_CHECKING, Any, Callable, Dict, Literal, Optional,
                     Sequence, Union)
 
 import numpy as np
-import pytorch_lightning as pl
+import lightning.pytorch as L
 import torch
 import torch.nn.functional as F
 from torch import nn
-from pytorch_lightning.callbacks import Callback, EarlyStopping
+from lightning.pytorch.callbacks import Callback, EarlyStopping
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 from torch.optim import lr_scheduler
 from torchmetrics.text import CharErrorRate, WordErrorRate
@@ -44,7 +44,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-class RecognitionModel(pl.LightningModule):
+class RecognitionModel(L.LightningModule):
     def __init__(self,
                  num_classes: int,
                  batches_per_epoch: int = 0,

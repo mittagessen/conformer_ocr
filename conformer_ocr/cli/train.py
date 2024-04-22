@@ -160,9 +160,9 @@ def train(ctx, load, batch_size, pad, line_height, output, freq, quit, epochs,
           min_epochs, lag, min_delta, optimizer, lrate, momentum, weight_decay,
           warmup, freeze_backbone, schedule, gamma, step_size, sched_patience,
           cos_max, cos_min_lr, partition, fixed_splits, normalization,
-          normalize_whitespace, codec, reorder, base_dir, training_files,
-          evaluation_files, workers, threads, format_type, augment,
-          ground_truth):
+          normalize_whitespace, codec, reorder, base_dir,
+          training_files, evaluation_files, workers, threads, format_type,
+          augment, ground_truth):
     """
     Trains a model from image-text pairs.
     """
@@ -182,8 +182,8 @@ def train(ctx, load, batch_size, pad, line_height, output, freq, quit, epochs,
     from conformer_ocr.dataset import TextLineDataModule
     from conformer_ocr.model import RecognitionModel
 
-    from pytorch_lightning import Trainer
-    from pytorch_lightning.callbacks import RichModelSummary, ModelCheckpoint, RichProgressBar
+    from lightning.pytorch import Trainer
+    from lightning.pytorch.callbacks import RichModelSummary, ModelCheckpoint, RichProgressBar
 
     torch.set_float32_matmul_precision('medium')
 

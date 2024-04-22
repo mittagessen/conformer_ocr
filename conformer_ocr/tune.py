@@ -18,7 +18,7 @@ def train_model(trial: 'optuna.trial.Trial',
     from conformer_ocr.model import RecognitionModel
     from conformer_ocr.lightning_utils import PyTorchLightningPruningCallback
 
-    from pytorch_lightning import Trainer
+    from lightning.pytorch import Trainer
     from threadpoolctl import threadpool_limits
 
     hyper_params = RECOGNITION_HYPER_PARAMS.copy()
@@ -115,7 +115,7 @@ def cli(ctx, device, seed, database, name, epochs, samples, workers, pruning,
     torch.set_float32_matmul_precision('medium')
 
     if seed:
-        from pytorch_lightning import seed_everything
+        from lightning.pytorch import seed_everything
         seed_everything(seed, workers=True)
 
     # disable automatic partition when given evaluation set explicitly

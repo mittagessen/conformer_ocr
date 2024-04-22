@@ -1,12 +1,13 @@
 import optuna
 import warnings
 
-from pytorch_lightning import Callback
+from lightning.pytorch import Callback
+
 
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    import pytorch_lightning as pl
+    import lightning.pytorch as L
 
 class PyTorchLightningPruningCallback(Callback):
     """PyTorch Lightning callback to prune unpromising trials.
@@ -38,7 +39,7 @@ class PyTorchLightningPruningCallback(Callback):
         self._trial = trial
         self.monitor = monitor
 
-    def on_validation_end(self, trainer: 'pl.Trainer', pl_module: 'pl.LightningModule') -> None:
+    def on_validation_end(self, trainer: 'L.Trainer', pl_module: 'L.LightningModule') -> None:
         # Trainer calls `on_validation_end` for sanity check. Therefore, it is necessary to avoid
         # calling `trial.report` multiple times at epoch 0. For more details, see
         # https://github.com/PyTorchLightning/pytorch-lightning/issues/1391.

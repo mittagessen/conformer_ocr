@@ -19,16 +19,14 @@ graphemes.
 """
 import logging
 from collections import Counter
-from typing import Dict, List, Sequence, Set, Tuple, Union
+from typing import Dict, List, Sequence, Set, Tuple, Union, Optional, Iterator, TYPE_CHECKING
 
+import io
 import numpy as np
-from io import BytesIO
-from torch import IntTensor
 import sentencepiece as spm
+from torch import IntTensor
 
 from kraken.lib.exceptions import KrakenCodecException, KrakenEncodeException
-
-from typing import TYPE_CHECKING, Iterator, Union, Optional
 
 if TYPE_CHECKING:
     from os import PathLike
@@ -51,11 +49,13 @@ class SentencePieceCodec(object):
                    model
         strict: Flag indicating if encoding/decoding errors should be ignored
                 or cause an exception.
+        vocab_size: Size of the vocabulary when training a SentencePiece model.
     """
     def __init__(self,
                  model: Optional[Union['PathLike', str]] = None,
                  sentences: Optional[Iterator[str]] = None,
-                 strict: bool = False):
+                 strict: bool = False,
+                 vocab_size: int = 1024):
         super().__init__()
         if model and sentences:
             raise ValueError('`model` and `sentences` arguments are mutually exclusive')
@@ -69,8 +69,11 @@ class SentencePieceCodec(object):
                                            normalization_rule_name='identity',
                                            remove_extra_whitespaces=False,
                                            split_by_whitespace=False,
-                                           character_coverage=1.0)
+                                           character_coverage=1.0,
+                                           vocab_size=vocab_size)
             self.spp = spm.SentencePieceProcessor(model_proto=_model.getvalue())
+
+        self.strict = strict
 
     def __len__(self) -> int:
         """
@@ -91,7 +94,7 @@ class SentencePieceCodec(object):
         """
         Returns the maximum label value.
         """
-        return self.spp_vocab_size() - 1
+        return self.spp.vocab_size() - 1
 
     def encode(self, s: str) -> IntTensor:
         """
@@ -130,7 +133,7 @@ class SentencePieceCodec(object):
         Returns:
             A list of tuples (code point, start, end, confidence)
         """
-        proto = self.spp.decode_ids_as_immutable_proto([x[0] for x in labels])
+        proto = self.spp.decode_ids_as_immutable_proto([int(x[0]) for x in labels])
         return [(piece.surface,) + label[1:] for piece, label in zip(proto.pieces, labels)]
 
     def merge(self, codec) -> None:
