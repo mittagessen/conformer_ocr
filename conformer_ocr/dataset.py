@@ -132,6 +132,7 @@ class TextLineDataModule(L.LightningDataModule):
         if len(self.val_set) == 0:
             raise ValueError('No valid validation data provided. Please add some.')
 
+        self.train_set.dataset.encode(codec)
         self.codec = self.train_set.dataset.codec
 
         self.val_set.dataset.encode(self.codec)
