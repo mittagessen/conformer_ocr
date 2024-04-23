@@ -133,6 +133,8 @@ class SentencePieceCodec(object):
         Returns:
             A list of tuples (code point, start, end, confidence)
         """
+        if not labels:
+            return labels
         proto = self.spp.decode_ids_as_immutable_proto([int(x[0]) for x in labels])
         return [(piece.surface,) + label[1:] for piece, label in zip(proto.pieces, labels)]
 
