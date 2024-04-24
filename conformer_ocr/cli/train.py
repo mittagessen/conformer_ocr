@@ -261,7 +261,9 @@ def train(ctx, load, batch_size, pad, line_height, output, freq, quit, epochs,
 
     if load:
         message('Loading model.')
-        model = RecognitionModel.load_from_checkpoint(load, **hyper_params)
+        model = RecognitionModel.load_from_checkpoint(load,
+                                                      num_classes=data_module.num_classes,
+                                                      **hyper_params)
     else:
         message('Initializing model.')
         model = RecognitionModel(**hyper_params,
