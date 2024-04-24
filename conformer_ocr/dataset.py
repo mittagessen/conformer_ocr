@@ -15,15 +15,13 @@
 """
 Utility functions for data loading and training of VGSL networks.
 """
-from typing import (TYPE_CHECKING, Any, Callable, List, Literal, Optional, Sequence,
-                    Tuple, Union)
+from typing import (TYPE_CHECKING, Literal, Optional, Sequence, Union)
 
-import torch
-import pytorch_lightning as pl
+import lightning.pytorch as L
 
 from torch.utils.data import DataLoader, Subset, random_split
 
-from kraken.containers import BaselineLine, Segmentation
+from kraken.lib.xml import XMLPage
 from kraken.lib.codec import PytorchCodec
 from kraken.lib.dataset import (ArrowIPCRecognitionDataset, PolygonGTDataset,
                                 ImageInputTransforms, collate_sequences)
@@ -43,14 +41,14 @@ def _validation_worker_init_fn(worker_id):
         results when validating. Temporarily increase the logging level
         for lightning because otherwise it will display a message
         at info level about the seed being changed. """
-    from pytorch_lightning import seed_everything
+    from lightning.pytorch import seed_everything
     level = logging.getLogger("lightning_fabric.utilities.seed").level
     logging.getLogger("lightning_fabric.utilities.seed").setLevel(logging.WARN)
     seed_everything(42)
     logging.getLogger("lightning_fabric.utilities.seed").setLevel(level)
 
 
-class TextLineDataModule(pl.LightningDataModule):
+class TextLineDataModule(L.LightningDataModule):
     def __init__(self,
                  training_data: Sequence[Union[str, 'PathLike']],
                  evaluation_data: Optional[Sequence[Union[str, 'PathLike']]] = None,
@@ -133,7 +131,6 @@ class TextLineDataModule(pl.LightningDataModule):
 
         self.save_hyperparameters()
 
-
     def _build_dataset(self, DatasetClass, training_data, **kwargs):
 
         dataset = DatasetClass(normalization=self.hparams.normalization,
@@ -174,7 +171,6 @@ class TextLineDataModule(pl.LightningDataModule):
     def state_dict(self):
         # track whatever you want here
         return {"codec": self.codec.c2l}
-
 
     def load_state_dict(self, state_dict):
         # restore the state based on what you tracked in (def state_dict)

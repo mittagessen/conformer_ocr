@@ -12,21 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import torch
 import torch.nn as nn
 from torch import Tensor
 from typing import Tuple
 
 from .feed_forward import FeedForwardModule
 from .attention import MultiHeadedSelfAttentionModule
-from .convolution import (
-    ConformerConvModule,
-    Conv2dSubsampling,
-)
-from .modules import (
-    ResidualConnectionModule,
-    Linear,
-)
+from .convolution import ConformerConvModule, Conv2dSubsampling
+from .modules import ResidualConnectionModule
 
 
 class ConformerBlock(nn.Module):

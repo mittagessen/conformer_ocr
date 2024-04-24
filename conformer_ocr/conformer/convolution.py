@@ -245,4 +245,3 @@ def calc_length(lengths, all_paddings, kernel_size, stride, repeat_num=1):
         lengths = torch.div(lengths.to(dtype=torch.float) + add_pad, stride) + one
         lengths = torch.floor(lengths)
     return lengths.to(dtype=torch.int)
-

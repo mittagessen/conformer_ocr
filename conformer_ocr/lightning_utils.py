@@ -1,18 +1,19 @@
 import optuna
 import warnings
 
-from pytorch_lightning import Callback
+from lightning.pytorch import Callback
 
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    import pytorch_lightning as pl
+    import lightning.pytorch as pl
+
 
 class PyTorchLightningPruningCallback(Callback):
     """PyTorch Lightning callback to prune unpromising trials.
 
     See `the example <https://github.com/optuna/optuna-examples/blob/
-    main/pytorch/pytorch_lightning_simple.py>`__
+    main/pytorch/lightning.pytorch_simple.py>`__
     if you want to add a pruning callback which observes accuracy.
 
     Args:

@@ -2,8 +2,14 @@
 import click
 import uuid
 
-from conformer_ocr.cli.util import _expand_gt, _validate_manifests, message, to_ptl_device
+from conformer_ocr.cli.util import _expand_gt, _validate_manifests, to_ptl_device
 from conformer_ocr.default_specs import RECOGNITION_HYPER_PARAMS
+
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    import optuna
+
 
 def train_model(trial: 'optuna.trial.Trial',
                 accelerator,
@@ -18,7 +24,7 @@ def train_model(trial: 'optuna.trial.Trial',
     from conformer_ocr.model import RecognitionModel
     from conformer_ocr.lightning_utils import PyTorchLightningPruningCallback
 
-    from pytorch_lightning import Trainer
+    from lightning.pytorch import Trainer
     from threadpoolctl import threadpool_limits
 
     hyper_params = RECOGNITION_HYPER_PARAMS.copy()
@@ -33,7 +39,6 @@ def train_model(trial: 'optuna.trial.Trial',
     hyper_params['weight_decay'] = trial.suggest_loguniform('weight_decay', 1e-6, 1e-3)
     hyper_params['subsampling_factor'] = trial.suggest_categorical('subsampling_factor', [2, 4, 8])
     hyper_params['encoder_dim'] = trial.suggest_categorical('encoder_dim', [144, 256, 320])
-
 
     data_module = TextLineDataModule(training_data=training_data,
                                      evaluation_data=evaluation_data,
@@ -109,18 +114,14 @@ def cli(ctx, device, seed, database, name, epochs, samples, workers, pruning,
 
     import torch
     import optuna
-    from optuna.trial import TrialState
     from optuna.samplers import TPESampler
 
     torch.set_float32_matmul_precision('medium')
 
     if seed:
-        from pytorch_lightning import seed_everything
+        from lightning.pytorch import seed_everything
         seed_everything(seed, workers=True)
 
-    # disable automatic partition when given evaluation set explicitly
-    if evaluation_files:
-        partition = 1
     ground_truth = list(ground_truth)
 
     # merge training_files into ground_truth list
@@ -163,8 +164,7 @@ def cli(ctx, device, seed, database, name, epochs, samples, workers, pruning,
     print("Number of finished trials: {}".format(len(study.trials)))
 
     print("Best trial:")
-    trial = study.best_trial
-
+    print(study.best_trial)
 
 
 if __name__ == '__main__':

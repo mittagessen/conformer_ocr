@@ -63,8 +63,5 @@ class RelPositionalEncoding(nn.Module):
             torch.Tensor: Encoded tensor B X T X C
         """
         self.extend_pe(x)
-        pos_emb = self.pe[
-            :,
-            self.pe.size(1) // 2 - x.size(1) + 1 : self.pe.size(1) // 2 + x.size(1),
-        ]
+        pos_emb = self.pe[:, self.pe.size(1) // 2 - x.size(1) + 1:self.pe.size(1) // 2 + x.size(1)]
         return pos_emb

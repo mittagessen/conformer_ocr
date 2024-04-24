@@ -3,6 +3,7 @@ import logging
 
 import click
 from PIL import Image
+from rich.logging import RichHandler
 from rich.traceback import install
 
 from kraken.lib import log
@@ -10,9 +11,11 @@ from kraken.lib import log
 from .train import train
 from .pred import ocr
 
+
 def set_logger(logger=None, level=logging.ERROR):
     logger.addHandler(RichHandler(rich_tracebacks=True))
     logger.setLevel(level)
+
 
 # raise default max image size to 20k * 20k pixels
 Image.MAX_IMAGE_PIXELS = 20000 ** 2
@@ -30,6 +33,7 @@ install(suppress=[click])
 
 # raise default max image size to 20k * 20k pixels
 Image.MAX_IMAGE_PIXELS = 20000 ** 2
+
 
 @click.group()
 @click.version_option()
@@ -52,10 +56,10 @@ Image.MAX_IMAGE_PIXELS = 20000 ** 2
 def cli(ctx, verbose, seed, deterministic, device, precision, autocast):
     ctx.meta['deterministic'] = False if not deterministic else 'warn'
     if seed:
-        from pytorch_lightning import seed_everything
+        from lightning.pytorch import seed_everything
         seed_everything(seed, workers=True)
     elif deterministic:
-        from pytorch_lightning import seed_everything
+        from lightning.pytorch import seed_everything
         seed_everything(42, workers=True)
 
     ctx.meta['verbose'] = verbose
@@ -63,6 +67,7 @@ def cli(ctx, verbose, seed, deterministic, device, precision, autocast):
     ctx.meta['precision'] = precision
     ctx.meta['autocast'] = autocast
     log.set_logger(logger, level=30 - min(10 * verbose, 20))
+
 
 cli.add_command(train)
 cli.add_command(ocr)

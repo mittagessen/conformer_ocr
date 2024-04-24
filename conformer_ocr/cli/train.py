@@ -19,8 +19,6 @@ conformer_ocr.cli.train
 Command line driver for recognition training.
 """
 import logging
-import pathlib
-from typing import List
 
 import click
 from threadpoolctl import threadpool_limits
@@ -182,8 +180,8 @@ def train(ctx, load, batch_size, pad, line_height, output, freq, quit, epochs,
     from conformer_ocr.dataset import TextLineDataModule
     from conformer_ocr.model import RecognitionModel
 
-    from pytorch_lightning import Trainer
-    from pytorch_lightning.callbacks import RichModelSummary, ModelCheckpoint, RichProgressBar
+    from lightning.pytorch import Trainer
+    from lightning.pytorch.callbacks import RichModelSummary, ModelCheckpoint, RichProgressBar
 
     torch.set_float32_matmul_precision('medium')
 

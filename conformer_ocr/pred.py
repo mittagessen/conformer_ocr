@@ -23,19 +23,12 @@ import uuid
 import torch
 import logging
 import numpy as np
-import shapely.geometry as geom
 import torch.nn.functional as F
 
 from typing import Any, Callable, Dict, Literal, TYPE_CHECKING
 from torchvision.transforms import v2
 
-from transformers import SegformerConfig, SegformerForSemanticSegmentation
-
-from segfblla.tiles import ImageSlicer
-
-from kraken.blla import vec_regions, vec_lines
 from kraken.containers import Segmentation, BaselineLine
-from kraken.lib.segmentation import polygonal_reading_order, is_in_region
 
 if TYPE_CHECKING:
     from os import PathLike
@@ -49,17 +42,7 @@ def load_model_checkpoint(filename: 'PathLike', device: torch.device) -> 'nn.Mod
     Instantiates a pure torch nn.Module from a lightning checkpoint and returns
     the class mapping.
     """
-    lm = torch.load(filename, map_location=device)
-    model_weights = lm['state_dict']
-    config = SegformerConfig.from_dict(lm['model_config'])
-    net = SegformerForSemanticSegmentation(config)
-    for key in list(model_weights):
-        model_weights[key.replace("net.", "")] = model_weights.pop(key)
-    net.load_state_dict(model_weights)
-    net.class_mapping = lm['BaselineDataModule']['class_mapping']
-    net.topline = lm['BaselineDataModule'].get('topline', False)
-    net.patch_size = lm['BaselineDataModule'].get('patch_size', (512, 512))
-    return net
+    pass
 
 def ocr(*args, **kwargs):
     pass
