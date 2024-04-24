@@ -263,6 +263,7 @@ def train(ctx, load, batch_size, pad, line_height, output, freq, quit, epochs,
         message('Loading model.')
         model = RecognitionModel.load_from_checkpoint(load,
                                                       num_classes=data_module.num_classes,
+                                                      map_location=torch.device('cpu'),
                                                       **hyper_params)
     else:
         message('Initializing model.')
