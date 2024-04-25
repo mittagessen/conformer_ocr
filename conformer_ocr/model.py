@@ -15,10 +15,11 @@
 """
 Training loop interception helpers
 """
-import logging
 
-import lightning.pytorch as L
 import torch
+import logging
+import lightning.pytorch as L
+
 from torch import nn
 from lightning.pytorch.callbacks import EarlyStopping
 from torch.optim import lr_scheduler
@@ -300,7 +301,7 @@ def _configure_optimizer_and_lr_scheduler(hparams, params, loss_tracking_mode='m
         ret['lr_scheduler'] = lr_sched
 
     if schedule == 'reduceonplateau':
-        lr_sched['monitor'] = 'val_mean_iu'
+        lr_sched['monitor'] = 'val_accuracy'
         lr_sched['strict'] = False
         lr_sched['reduce_on_plateau'] = True
 
