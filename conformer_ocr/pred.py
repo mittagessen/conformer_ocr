@@ -114,8 +114,8 @@ class PytorchRecognitionModel(nn.Module):
         if self.device:
             line = line.to(self.device)
         line = line.squeeze(1).transpose(1, 2)
-        encoder_outputs, encoder_lens = self.nn['encoder'](line, lens)
-        probits = self.nn['decoder'](encoder_outputs)
+        encoder_outputs, encoder_lens = self.nn.encoder(line, lens)
+        probits = self.nn.decoder(encoder_outputs)
         return probits, encoder_lens
 
     def predict(self, line: torch.Tensor, lens: Optional[torch.Tensor] = None) -> List[List[Tuple[str, int, int, float]]]:
@@ -183,6 +183,21 @@ class PytorchRecognitionModel(nn.Module):
             net = cls(**metadata['hyper_params'], codec=codec)
             weights = safetensors.torch.load(tf.extractfile('model.safetensors').read())
         net.nn.load_state_dict(weights)
+        return net.eval()
+
+    @classmethod
+    def load_checkpoint(cls, path: 'PathLike'):
+        """
+        Loads a lightning checkpoint
+        """
+        state_dict = torch.load(path, map_location='cpu')
+        if not 'TextLineDataModule' in state_dict:
+            raise ValueError('Checkpoint does not contain data module state.')
+        codec = PytorchCodec(state_dict['TextLineDataModule']['codec'])
+        if not 'hyper_parameters' in state_dict:
+            raise ValueError('No hyperparameters in state_dict')
+        net = cls(**state_dict['hyper_parameters'], codec=codec)
+        net.load_state_dict(state_dict['state_dict'])
         return net.eval()
 
 
