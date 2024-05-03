@@ -276,7 +276,8 @@ def train(ctx, load, batch_size, pad, line_height, output, freq, quit, epochs,
 
     checkpoint_callback = ModelCheckpoint(dirpath=output, save_top_k=5, monitor='val_metric', mode='max')
     cbs.append(checkpoint_callback)
-    cbs.append(RichProgressBar(leave=True))
+    if not ctx.meta['verbose']:
+        cbs.append(RichProgressBar(leave=True))
 
     trainer = Trainer(accelerator=accelerator,
                       devices=device,
