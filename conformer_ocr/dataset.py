@@ -277,6 +277,7 @@ class ArrowIPCRecognitionDataset(Dataset):
         pass
 
     def __getitem__(self, index: int) -> Tuple[torch.Tensor, torch.Tensor]:
+        semantic_token = None
         try:
             sample = self.arrow_table.column('lines')[index].as_py()
             logger.debug(f'Loading sample {index}')
@@ -290,7 +291,6 @@ class ArrowIPCRecognitionDataset(Dataset):
                 semantic_token = [self.arrow_table.column(x)[index].as_py() for x in self.semantic_token_fields]
                 semantic_token = torch.tensor(semantic_token,
                                               dtype=im.dtype).expand(im.shape[2], semantic_token.shape[0]).transpose(0, 1)
-                im = torch.cat([im, semantic_token.unsqueeze(0)], dim=1)
             text = self._apply_text_transform(sample)
         except Exception:
             self.failed_samples.add(index)
@@ -299,7 +299,9 @@ class ArrowIPCRecognitionDataset(Dataset):
             logger.info(f'Failed. Replacing with sample {idx}')
             return self[idx]
 
-        return {'image': im, 'target': self.codec.encode(text) if self.codec is not None else text}
+        return {'image': im,
+                'semantic_token': semantic_token,
+                'target': self.codec.encode(text) if self.codec is not None else text}
 
     def __len__(self) -> int:
         return self._num_lines
