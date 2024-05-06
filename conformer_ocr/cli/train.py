@@ -274,7 +274,12 @@ def train(ctx, load, batch_size, pad, line_height, output, freq, quit, epochs,
 
     cbs = [RichModelSummary(max_depth=2)]
 
-    checkpoint_callback = ModelCheckpoint(dirpath=output, save_top_k=5, monitor='val_metric', mode='max')
+    checkpoint_callback = ModelCheckpoint(dirpath=output,
+                                          save_top_k=10,
+                                          monitor='val_metric', mode='max',
+                                          auto_insert_metric_name=False,
+                                          filename='checkpoint_{epoch:02d}-{100*val_metric:.2f}')
+
     cbs.append(checkpoint_callback)
     if not ctx.meta['verbose']:
         cbs.append(RichProgressBar(leave=True))
