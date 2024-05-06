@@ -157,7 +157,11 @@ logging.getLogger("lightning.fabric.utilities.seed").setLevel(logging.ERROR)
               default=RECOGNITION_HYPER_PARAMS['augment'],
               help='Enable image augmentation')
 @click.option('--semantic-context-tokens', show_default=True, default=None,
-              multiple=True, type=str, help='IDs of context tokens to append to input image.')
+              multiple=True, type=str, help='IDs of context tokens to append to image/use in aux loss')
+@click.option('--context-input/--no-context-input', show_default=True, default=False,
+              help='Whether to concatenate the context token to the network input.')
+@click.option('--context-aux-loss', show_default=True, default=0.0,
+              type=float, help='Proportion of auxiliary loss based on context tokens')
 @click.argument('ground_truth', nargs=-1, callback=_expand_gt, type=click.Path(exists=False, dir_okay=False))
 def train(ctx, load, batch_size, pad, line_height, output, freq, quit, epochs,
           min_epochs, lag, min_delta, optimizer, lrate, momentum, weight_decay,
@@ -165,7 +169,8 @@ def train(ctx, load, batch_size, pad, line_height, output, freq, quit, epochs,
           cos_max, cos_min_lr, partition, fixed_splits, normalization,
           normalize_whitespace, codec, reorder, base_dir, training_files,
           evaluation_files, workers, threads, format_type, augment,
-          semantic_context_tokens, ground_truth):
+          semantic_context_tokens, context_input, context_aux_loss,
+          ground_truth):
     """
     Trains a model from image-text pairs.
     """
@@ -215,6 +220,8 @@ def train(ctx, load, batch_size, pad, line_height, output, freq, quit, epochs,
                          'normalization': normalization,
                          'normalize_whitespace': normalize_whitespace,
                          'augment': augment,
+                         'context_token_input': context_input,
+                         'context_token_aux_loss': context_aux_loss,
                          })
 
     # disable automatic partition when given evaluation set explicitly
