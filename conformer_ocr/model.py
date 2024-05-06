@@ -57,6 +57,7 @@ class RecognitionModel(L.LightningModule):
                  cos_min_lr=1e-4,
                  warmup=15000,
                  height=96,
+                 context_token_dim: int = 0,
                  encoder_dim=512,
                  num_encoder_layers=18,
                  num_attention_heads=8,
@@ -97,7 +98,7 @@ class RecognitionModel(L.LightningModule):
 
         logger.info(f'Creating conformer model with {num_classes} outputs')
         encoder = ConformerEncoder(in_channels=1,
-                                   input_dim=height,
+                                   input_dim=height+context_token_dim,
                                    encoder_dim=encoder_dim,
                                    num_layers=num_encoder_layers,
                                    num_attention_heads=num_attention_heads,

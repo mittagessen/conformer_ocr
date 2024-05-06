@@ -156,6 +156,8 @@ logging.getLogger("lightning.fabric.utilities.seed").setLevel(logging.ERROR)
               show_default=True,
               default=RECOGNITION_HYPER_PARAMS['augment'],
               help='Enable image augmentation')
+@click.option('--semantic-context-tokens', show_default=True, default=None,
+              multiple=True, type=str, help='IDs of context tokens to append to input image.')
 @click.argument('ground_truth', nargs=-1, callback=_expand_gt, type=click.Path(exists=False, dir_okay=False))
 def train(ctx, load, batch_size, pad, line_height, output, freq, quit, epochs,
           min_epochs, lag, min_delta, optimizer, lrate, momentum, weight_decay,
@@ -163,7 +165,7 @@ def train(ctx, load, batch_size, pad, line_height, output, freq, quit, epochs,
           cos_max, cos_min_lr, partition, fixed_splits, normalization,
           normalize_whitespace, codec, reorder, base_dir, training_files,
           evaluation_files, workers, threads, format_type, augment,
-          ground_truth):
+          semantic_context_tokens, ground_truth):
     """
     Trains a model from image-text pairs.
     """
@@ -258,7 +260,8 @@ def train(ctx, load, batch_size, pad, line_height, output, freq, quit, epochs,
                                      format_type=format_type,
                                      codec=codec,
                                      normalization=hyper_params['normalization'],
-                                     normalize_whitespace=hyper_params['normalize_whitespace'])
+                                     normalize_whitespace=hyper_params['normalize_whitespace'],
+                                     semantic_context_tokens=semantic_context_tokens)
 
     if load:
         message('Loading model.')
@@ -270,6 +273,7 @@ def train(ctx, load, batch_size, pad, line_height, output, freq, quit, epochs,
         message('Initializing model.')
         model = RecognitionModel(**hyper_params,
                                  num_classes=data_module.num_classes,
+                                 context_token_dim=len(semantic_context_tokens),
                                  batches_per_epoch=len(data_module.train_dataloader()))
 
     if len(data_module.train_set) == 0:
