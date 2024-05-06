@@ -58,6 +58,8 @@ class RecognitionModel(L.LightningModule):
                  warmup=15000,
                  height=96,
                  context_token_dim: int = 0,
+                 context_token_input: bool = False,
+                 context_token_aux_loss: float = 0.0,
                  encoder_dim=512,
                  num_encoder_layers=18,
                  num_attention_heads=8,
@@ -98,7 +100,7 @@ class RecognitionModel(L.LightningModule):
 
         logger.info(f'Creating conformer model with {num_classes} outputs')
         encoder = ConformerEncoder(in_channels=1,
-                                   input_dim=height+context_token_dim,
+                                   input_dim=height+context_token_dim if context_token_input else height,
                                    encoder_dim=encoder_dim,
                                    num_layers=num_encoder_layers,
                                    num_attention_heads=num_attention_heads,
@@ -112,11 +114,15 @@ class RecognitionModel(L.LightningModule):
                                    half_step_residual=half_step_residual,
                                    subsampling_conv_channels=subsampling_conv_channels,
                                    subsampling_factor=subsampling_factor)
+
         decoder = nn.Linear(encoder_dim, num_classes, bias=True)
         self.nn = nn.ModuleDict({'encoder': encoder,
                                  'decoder': decoder})
 
-        # loss
+        if context_token_aux_loss > 0.0:
+            self.nn['aux_loss_pool'] = nn.AdaptiveMaxPool1d(1),
+            self.nn['aux_loss_pred'] = nn.Linear(encoder_dim, context_token_dim)
+
         self.criterion = nn.CTCLoss(reduction='sum', zero_infinity=True)
 
         self.val_cer = CharErrorRate()
@@ -129,7 +135,11 @@ class RecognitionModel(L.LightningModule):
 
     def _step(self, batch):
         try:
-            input, target = batch['image'], batch['target']
+            input, target, semantic_token = batch['image'], batch['target'], batch['semantic_token']
+            # concatenate context token to input image
+            if self.hparams.context_token_input:
+                semantic_token = semantic_token.expand(input.shape[2], semantic_token.shape[0]).transpose(0, 1)
+                input = torch.cat([input, semantic_token.unsqueeze(0)], dim=1)
             input = input.squeeze(1).transpose(1, 2)
             seq_lens, label_lens = batch['seq_lens'], batch['target_lens']
             encoder_outputs, encoder_lens = self.nn['encoder'](input, seq_lens)
@@ -141,6 +151,14 @@ class RecognitionModel(L.LightningModule):
                                   target,
                                   encoder_lens,
                                   label_lens)
+
+            # compute auxiliary loss
+            if self.hparams.context_token_aux_loss > 0.0:
+                pooled = self.nn.aux_loss_pool(encoder_outputs.transpose(1, 2))
+                aux_logits = self.nn.aux_loss_pred(pooled.squeeze(2))
+                aux_loss = F.binary_cross_entropy_with_logits(aux_logits, batch['semantic_token'])
+                loss = (1 - self.hparams.context_token_aux_loss) * loss + self.hparams.context_token_aux_loss * aux_loss
+
             return {'loss': loss,
                     'probits': probits,
                     'output_lens': encoder_lens}
