@@ -306,7 +306,4 @@ def train(ctx, load, batch_size, pad, line_height, output, freq, quit, epochs,
         logger.warning('Training aborted before end of first epoch.')
         ctx.exit(1)
 
-    if quit == 'early':
-        message(f'Moving best model {model.best_model} ({model.best_metric}) to {output}_best.mlmodel')
-        logger.info(f'Moving best model {model.best_model} ({model.best_metric}) to {output}_best.mlmodel')
-        shutil.copy(f'{model.best_model}', f'{output}_best.mlmodel')
+    print(f'Best model {checkpoint_callback.best_model_path}')
