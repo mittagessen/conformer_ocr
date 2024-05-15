@@ -278,7 +278,8 @@ def train(ctx, load, batch_size, pad, line_height, output, freq, quit, epochs,
                                           save_top_k=10,
                                           monitor='val_metric', mode='max',
                                           auto_insert_metric_name=False,
-                                          filename='checkpoint_{epoch:02d}-{val_metric:.2f}')
+                                          save_last=True,
+                                          filename='checkpoint_{epoch:02d}-{val_metric:.4f}')
 
     cbs.append(checkpoint_callback)
     if not ctx.meta['verbose']:
