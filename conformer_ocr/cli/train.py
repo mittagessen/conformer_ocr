@@ -30,6 +30,9 @@ from .util import _expand_gt, _validate_manifests, message, to_ptl_device
 logging.captureWarnings(True)
 logger = logging.getLogger('conformer_ocr')
 
+# suppress worker seeding message
+logging.getLogger("lightning.fabric.utilities.seed").setLevel(logging.ERROR)
+
 
 @click.command('train')
 @click.pass_context
