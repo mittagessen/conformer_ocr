@@ -22,6 +22,8 @@ import lightning.pytorch as L
 
 from torch import nn
 from lightning.pytorch.callbacks import EarlyStopping
+from lightning.pytorch.utilities.memory import (garbage_collection_cuda,
+                                                is_oom_error)
 from torch.optim import lr_scheduler
 from torchmetrics.text import CharErrorRate, WordErrorRate
 from torchmetrics.aggregation import MeanMetric
@@ -125,21 +127,28 @@ class RecognitionModel(L.LightningModule):
         return self.nn['decoder'](encoder_outputs), encoder_lens
 
     def _step(self, batch):
-        input, target = batch['image'], batch['target']
-        input = input.squeeze(1).transpose(1, 2)
-        seq_lens, label_lens = batch['seq_lens'], batch['target_lens']
-        encoder_outputs, encoder_lens = self.nn['encoder'](input, seq_lens)
-        probits = self.nn['decoder'](encoder_outputs)
-        logits = nn.functional.log_softmax(probits, dim=-1)
+        try:
+            input, target = batch['image'], batch['target']
+            input = input.squeeze(1).transpose(1, 2)
+            seq_lens, label_lens = batch['seq_lens'], batch['target_lens']
+            encoder_outputs, encoder_lens = self.nn['encoder'](input, seq_lens)
+            probits = self.nn['decoder'](encoder_outputs)
+            logits = nn.functional.log_softmax(probits, dim=-1)
 
-        # NCW -> WNC
-        loss = self.criterion(logits.transpose(0, 1),  # type: ignore
-                              target,
-                              encoder_lens,
-                              label_lens)
-        return {'loss': loss,
-                'probits': probits,
-                'output_lens': encoder_lens}
+            # NCW -> WNC
+            loss = self.criterion(logits.transpose(0, 1),  # type: ignore
+                                  target,
+                                  encoder_lens,
+                                  label_lens)
+            return {'loss': loss,
+                    'probits': probits,
+                    'output_lens': encoder_lens}
+        except RuntimeError as e:
+            if is_oom_error(e):
+                logger.warning('Out of memory error in trainer. Skipping batch and freeing caches.')
+                garbage_collection_cuda()
+            else:
+                raise
 
     def training_step(self, batch, batch_idx):
         loss = self._step(batch)['loss']
