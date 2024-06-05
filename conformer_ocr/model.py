@@ -151,26 +151,29 @@ class RecognitionModel(L.LightningModule):
                 raise
 
     def training_step(self, batch, batch_idx):
-        loss = self._step(batch)['loss']
-        self.log('train_loss', loss, on_step=False, on_epoch=True, prog_bar=True, logger=True)
-        return loss
+        o = self._step(batch)['loss']
+        if o is not None:
+            loss = o['loss']
+            self.log('train_loss', loss, on_step=False, on_epoch=True, prog_bar=True, logger=True)
+            return loss
 
     def validation_step(self, batch, batch_idx):
         o = self._step(batch)
-        probits = o['probits'].transpose(1, 2).cpu().float().numpy()
+        if o is not None:
+            probits = o['probits'].transpose(1, 2).cpu().float().numpy()
 
-        pred = []
-        for seq, seq_len in zip(probits, o['output_lens']):
-            locs = greedy_decoder(seq[:, :seq_len])
-            pred.append(''.join(x[0] for x in self.trainer.datamodule.val_codec.decode(locs)))
-        idx = 0
-        decoded_targets = []
-        for offset in batch['target_lens']:
-            decoded_targets.append(''.join([x[0] for x in self.trainer.datamodule.val_codec.decode([(x, 0, 0, 0) for x in batch['target'][idx:idx+offset]])]))
-            idx += offset
-        self.val_cer.update(pred, decoded_targets)
-        self.val_wer.update(pred, decoded_targets)
-        self.val_loss.update(o['loss'])
+            pred = []
+            for seq, seq_len in zip(probits, o['output_lens']):
+                locs = greedy_decoder(seq[:, :seq_len])
+                pred.append(''.join(x[0] for x in self.trainer.datamodule.val_codec.decode(locs)))
+            idx = 0
+            decoded_targets = []
+            for offset in batch['target_lens']:
+                decoded_targets.append(''.join([x[0] for x in self.trainer.datamodule.val_codec.decode([(x, 0, 0, 0) for x in batch['target'][idx:idx+offset]])]))
+                idx += offset
+            self.val_cer.update(pred, decoded_targets)
+            self.val_wer.update(pred, decoded_targets)
+            self.val_loss.update(o['loss'])
 
     def on_validation_epoch_end(self):
         accuracy = 1.0 - self.val_cer.compute()
