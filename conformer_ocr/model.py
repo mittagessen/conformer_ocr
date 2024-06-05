@@ -151,7 +151,7 @@ class RecognitionModel(L.LightningModule):
                 raise
 
     def training_step(self, batch, batch_idx):
-        o = self._step(batch)['loss']
+        o = self._step(batch)
         if o is not None:
             loss = o['loss']
             self.log('train_loss', loss, on_step=False, on_epoch=True, prog_bar=True, logger=True)
