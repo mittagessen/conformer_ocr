@@ -268,7 +268,7 @@ def train(ctx, load, batch_size, pad, line_height, output, freq, quit, epochs,
                                      codec=codec,
                                      normalization=hyper_params['normalization'],
                                      normalize_whitespace=hyper_params['normalize_whitespace'],
-                                     semantic_context_tokens=semantic_context_tokens)
+                                     semantic_token_fields=semantic_context_tokens)
 
     if load:
         message('Loading model.')
