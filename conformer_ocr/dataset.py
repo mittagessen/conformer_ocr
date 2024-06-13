@@ -306,7 +306,7 @@ class ArrowIPCRecognitionDataset(Dataset):
         return self._num_lines
 
 
-class TextLineDataModule(pl.LightningDataModule):
+class TextLineDataModule(l.LightningDataModule):
     def __init__(self,
                  training_data: Sequence[Union[str, 'PathLike']],
                  evaluation_data: Optional[Sequence[Union[str, 'PathLike']]] = None,
