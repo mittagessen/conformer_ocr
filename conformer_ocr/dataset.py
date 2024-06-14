@@ -20,6 +20,7 @@ from typing import (TYPE_CHECKING, Literal, Optional, Sequence, Union)
 import io
 import json
 import torch
+import torch.functional as F
 import numpy as np
 import pyarrow as pa
 import traceback
