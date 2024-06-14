@@ -156,7 +156,7 @@ class RecognitionModel(L.LightningModule):
             if self.hparams.context_token_aux_loss > 0.0:
                 pooled = self.nn.aux_loss_pool(encoder_outputs.transpose(1, 2))
                 aux_logits = self.nn.aux_loss_pred(pooled.squeeze(2))
-                aux_loss = F.binary_cross_entropy_with_logits(aux_logits, batch['semantic_token'])
+                aux_loss = nn.functional.binary_cross_entropy_with_logits(aux_logits, batch['semantic_token'])
                 loss = (1 - self.hparams.context_token_aux_loss) * loss + self.hparams.context_token_aux_loss * aux_loss
 
             return {'loss': loss,
