@@ -38,8 +38,7 @@ from torch.utils.data import Dataset, DataLoader, Subset, random_split
 from kraken.lib import functional_im_transforms as F_t
 from kraken.lib.xml import XMLPage
 from kraken.lib.codec import PytorchCodec
-from kraken.lib.dataset import (PolygonGTDataset,
-                                ImageInputTransforms, collate_sequences)
+from kraken.lib.dataset import PolygonGTDataset, ImageInputTransforms
 from kraken.lib.exceptions import KrakenInputException
 
 if TYPE_CHECKING:
@@ -59,6 +58,28 @@ def _validation_worker_init_fn(worker_id):
         at info level about the seed being changed. """
     from lightning.pytorch import seed_everything
     seed_everything(42)
+
+
+def collate_sequences(batch):
+    """
+    Sorts and pads sequences.
+    """
+    sorted_batch = sorted(batch, key=lambda x: x['image'].shape[2], reverse=True)
+    seqs = [x['image'] for x in sorted_batch]
+    semantic_tokens = [x['semantic_token'] for x in sorted_batch]
+    seq_lens = torch.LongTensor([seq.shape[2] for seq in seqs])
+    max_len = seqs[0].shape[2]
+    seqs = torch.stack([F.pad(seq, pad=(0, max_len-seq.shape[2])) for seq in seqs])
+    if isinstance(sorted_batch[0]['target'], str):
+        labels = [x['target'] for x in sorted_batch]
+    else:
+        labels = torch.cat([x['target'] for x in sorted_batch]).long()
+    label_lens = torch.LongTensor([len(x['target']) for x in sorted_batch])
+    return {'image': seqs,
+            'target': labels,
+            'seq_lens': seq_lens,
+            'target_lens': label_lens,
+            'semantic_token': semantic_tokens}
 
 
 class DefaultAugmenter():
