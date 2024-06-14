@@ -120,7 +120,7 @@ class RecognitionModel(L.LightningModule):
                                  'decoder': decoder})
 
         if context_token_aux_loss > 0.0:
-            self.nn['aux_loss_pool'] = nn.AdaptiveMaxPool1d(1),
+            self.nn['aux_loss_pool'] = nn.AdaptiveMaxPool1d(1)
             self.nn['aux_loss_pred'] = nn.Linear(encoder_dim, context_token_dim)
 
         self.criterion = nn.CTCLoss(reduction='sum', zero_infinity=True)
