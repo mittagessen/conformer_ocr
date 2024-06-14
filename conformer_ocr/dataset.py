@@ -311,7 +311,7 @@ class ArrowIPCRecognitionDataset(Dataset):
                 im = torch.tensor(o['image'].transpose(2, 0, 1))
             if self.semantic_token_fields:
                 semantic_token = [self.arrow_table.column(x)[index].as_py() for x in self.semantic_token_fields]
-                semantic_token = torch.tensor(semantic_token, dtype=im.dtype)
+                semantic_token = torch.tensor(semantic_token)
             text = self._apply_text_transform(sample)
         except Exception:
             self.failed_samples.add(index)
