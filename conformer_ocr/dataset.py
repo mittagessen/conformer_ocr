@@ -67,7 +67,7 @@ def collate_sequences(batch):
     """
     sorted_batch = sorted(batch, key=lambda x: x['image'].shape[2], reverse=True)
     seqs = [x['image'] for x in sorted_batch]
-    semantic_tokens = [x['semantic_token'] for x in sorted_batch]
+    semantic_tokens = torch.LongTensor([x['semantic_token'] for x in sorted_batch])
     seq_lens = torch.LongTensor([seq.shape[2] for seq in seqs])
     max_len = seqs[0].shape[2]
     seqs = torch.stack([F.pad(seq, pad=(0, max_len-seq.shape[2])) for seq in seqs])
