@@ -34,6 +34,70 @@ logger = logging.getLogger('conformer_ocr')
 logging.getLogger("lightning.fabric.utilities.seed").setLevel(logging.ERROR)
 
 
+@click.command('avg_ckpts')
+@click.pass_context
+@click.option('-o', '--output', show_default=True, type=click.Path(), default='average.ckpt', help='Averaged model file path.')
+@click.option('-n', '--num-checkpoints', show_default=True, default=5, type=click.IntRange(2), help='Number of final checkpoints to average.')
+@click.argument('input', nargs=1, type=click.Path(exists=True, dir_okay=True, file_okay=False))
+def avg_ckpts(ctx, output, num_checkpoints, input):
+    """
+    Averages n-last checkpoints in input directory.
+    """
+    import glob
+    import torch
+    import collections
+    ckpts = sorted(glob.glob(f'{input}/checkpoint_*-*.ckpt'))
+    message(f'Found {len(ckpts)} checkpoints in {input}')
+    ckpts = ckpts[-num_checkpoints:]
+    if len(ckpts) < num_checkpoints:
+        raise click.BadParameter(f'Less checkpoints found than requested for averaging ({len(ckpts)} < {num_checkpoints})', param_hint='input')
+    message(f'Averaging {ckpts}')
+
+    params_dict = collections.OrderedDict()
+    params_keys = None
+    new_state = None
+    num_models = len(ckpts)
+
+    for fpath in ckpts:
+        with open(fpath, "rb") as f:
+            state = torch.load(f, map_location=(lambda s, _: torch.serialization.default_restore_location(s, 'cpu')),)
+        # Copies over the settings from the first checkpoint
+        if new_state is None:
+            new_state = state
+
+        model_params = state['state_dict']
+
+        model_params_keys = list(model_params.keys())
+        if params_keys is None:
+            params_keys = model_params_keys
+        elif params_keys != model_params_keys:
+            raise KeyError(
+                "For checkpoint {}, expected list of params: {}, "
+                "but found: {}".format(f, params_keys, model_params_keys)
+            )
+
+        for k in params_keys:
+            p = model_params[k]
+            if isinstance(p, torch.HalfTensor):
+                p = p.float()
+            if k not in params_dict:
+                params_dict[k] = p.clone()
+                # NOTE: clone() is needed in case of p is a shared parameter
+            else:
+                params_dict[k] += p
+
+    averaged_params = collections.OrderedDict()
+    for k, v in params_dict.items():
+        averaged_params[k] = v
+        if averaged_params[k].is_floating_point():
+            averaged_params[k].div_(num_models)
+        else:
+            averaged_params[k] //= num_models
+    new_state['state_dict'] = averaged_params
+    message(f'Writing averaged checkpoint to {output}')
+    torch.save(new_state, output)
+
+
 @click.command('train')
 @click.pass_context
 @click.option('-i', '--load', default=None, type=click.Path(exists=True), help='Checkpoint to load')
@@ -178,7 +242,6 @@ def train(ctx, load, batch_size, pad, line_height, output, freq, quit, epochs,
 
     import json
     import torch
-    import shutil
 
     from conformer_ocr.dataset import TextLineDataModule
     from conformer_ocr.model import RecognitionModel
@@ -284,7 +347,6 @@ def train(ctx, load, batch_size, pad, line_height, output, freq, quit, epochs,
                                           auto_insert_metric_name=False,
                                           filename='checkpoint_{epoch:02d}-{val_metric:.4f}')
 
-
     cbs.append(checkpoint_callback)
     if not ctx.meta['verbose']:
         cbs.append(RichProgressBar(leave=True))
@@ -312,4 +374,3 @@ def train(ctx, load, batch_size, pad, line_height, output, freq, quit, epochs,
         ctx.exit(1)
 
     print(f'Best model {checkpoint_callback.best_model_path}')
-

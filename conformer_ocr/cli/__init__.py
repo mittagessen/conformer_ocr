@@ -8,7 +8,7 @@ from rich.traceback import install
 
 from kraken.lib import log
 
-from .train import train
+from .train import train, avg_ckpts
 from .test import test
 from .pred import ocr
 
@@ -69,7 +69,7 @@ def cli(ctx, verbose, seed, deterministic, device, precision, autocast):
     ctx.meta['autocast'] = autocast
     log.set_logger(logger, level=30 - min(10 * verbose, 20))
 
-
+cli.add_command(avg_ckpts)
 cli.add_command(train)
 cli.add_command(test)
 cli.add_command(ocr)
