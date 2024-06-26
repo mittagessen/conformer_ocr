@@ -279,10 +279,11 @@ def train(ctx, load, batch_size, pad, line_height, output, freq, quit, epochs,
 
     checkpoint_callback = ModelCheckpoint(dirpath=output,
                                           save_top_k=10,
-                                          monitor='val_metric', mode='max',
+                                          monitor='global_step',
+                                          mode='max',
                                           auto_insert_metric_name=False,
-                                          save_last=True,
                                           filename='checkpoint_{epoch:02d}-{val_metric:.4f}')
+
 
     cbs.append(checkpoint_callback)
     if not ctx.meta['verbose']:
@@ -311,3 +312,4 @@ def train(ctx, load, batch_size, pad, line_height, output, freq, quit, epochs,
         ctx.exit(1)
 
     print(f'Best model {checkpoint_callback.best_model_path}')
+
