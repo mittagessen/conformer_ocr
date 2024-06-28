@@ -138,7 +138,6 @@ class RecognitionModel(L.LightningModule):
             input, target, semantic_token = batch['image'], batch['target'], batch['semantic_token']
             # concatenate context token to input image
             if self.hparams.context_token_input:
-                semantic_token = semantic_token.expand(input.shape[2], semantic_token.shape[0]).transpose(0, 1)
                 semantic_token = semantic_token.unsqueeze(-1).expand(-1, -1, input.shape[-1])
                 input = torch.cat([input.squeeze(1), semantic_token], dim=1).unsqueeze(1)
             input = input.squeeze(1).transpose(1, 2)
