@@ -125,7 +125,7 @@ class PytorchRecognitionModel(nn.Module):
             line = line.squeeze(1).transpose(1, 2)
             encoder_outputs, encoder_lens = self.nn.encoder(line, lens)
             probits = self.nn.decoder(encoder_outputs)
-        return probits, encoder_lens
+        return probits.to('cpu'), encoder_lens.to('cpu')
 
     def predict(self, line: torch.Tensor, lens: Optional[torch.Tensor] = None) -> List[List[Tuple[str, int, int, float]]]:
         """
