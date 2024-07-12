@@ -231,7 +231,7 @@ class ArrowIPCRecognitionDataset(Dataset):
         if self.semantic_token_fields:
             for stf in self.semantic_token_fields:
                 if stf not in ds_table.column_names:
-                    raise ValueError(f'Requested semantic token {stf} not available as a column name in {ds_table.column_names}.')
+                    logger.warning(f'Requested semantic token {stf} not available as a column name in {ds_table.column_names}.')
         if self._split_filter:
             ds_table = ds_table.filter(ds_table.column(self._split_filter))
         if self.skip_empty_lines:
