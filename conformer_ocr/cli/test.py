@@ -163,6 +163,7 @@ def test(ctx, batch_size, model, evaluation_files, device, pad, workers,
                           whitespace_normalization=normalize_whitespace,
                           reorder=reorder,
                           im_transforms=ts,
+                          augmentation=False,
                           **dataset_kwargs)
         for line in test_set:
             try:
