@@ -64,6 +64,8 @@ class PytorchRecognitionModel(nn.Module):
                  half_step_residual: bool,
                  subsampling_conv_channels: int,
                  subsampling_factor: int,
+                 context_token_input: bool,
+                 context_token_dim: bool,
                  codec: PytorchCodec,
                  ctc_decoder=greedy_decoder,
                  **kwargs):
@@ -72,8 +74,15 @@ class PytorchRecognitionModel(nn.Module):
         inference.
         """
         super().__init__()
+        if context_token_input:
+            self.context_token_input = True
+            real_height = height + context_token_dim
+        else:
+            self.context_token_input = False
+            real_height = height
+
         encoder = ConformerEncoder(in_channels=1,
-                                   input_dim=height,
+                                   input_dim=real_height,
                                    encoder_dim=encoder_dim,
                                    num_layers=num_encoder_layers,
                                    num_attention_heads=num_attention_heads,
@@ -93,6 +102,7 @@ class PytorchRecognitionModel(nn.Module):
 
         self.codec = codec
         self.ctc_decoder = ctc_decoder
+        self.height = height
 
     def forward(self, line: torch.Tensor, lens: torch.Tensor = None) -> Union[np.ndarray, Tuple[np.ndarray, np.ndarray]]:
         """
@@ -111,11 +121,10 @@ class PytorchRecognitionModel(nn.Module):
             KrakenInputException: Is raised if the channel dimension isn't of
                                   size 1 in the network output.
         """
-        if self.device:
-            line = line.to(self.device)
-        line = line.squeeze(1).transpose(1, 2)
-        encoder_outputs, encoder_lens = self.nn.encoder(line, lens)
-        probits = self.nn.decoder(encoder_outputs)
+        with torch.no_grad():
+            line = line.squeeze(1).transpose(1, 2)
+            encoder_outputs, encoder_lens = self.nn.encoder(line, lens)
+            probits = self.nn.decoder(encoder_outputs)
         return probits, encoder_lens
 
     def predict(self, line: torch.Tensor, lens: Optional[torch.Tensor] = None) -> List[List[Tuple[str, int, int, float]]]:
@@ -135,7 +144,7 @@ class PytorchRecognitionModel(nn.Module):
         dec_seqs = []
         pred = []
         for seq, seq_len in zip(o, olens):
-            locs = greedy_decoder(seq[:, :seq_len])
+            locs = self.ctc_decoder(seq[:, :seq_len])
             dec_seqs.append(''.join(x[0] for x in self.codec(locs)))
         return dec_seqs
 
@@ -152,7 +161,7 @@ class PytorchRecognitionModel(nn.Module):
         o, olens = self.forward(line, lens)
         dec_strs = []
         for seq, seq_len in zip(o, olens):
-            locs = self.decoder(seq[:, :seq_len])
+            locs = self.ctc_decoder(seq[:, :seq_len])
             dec_strs.append(''.join(x[0] for x in self.codec.decode(locs)))
         return dec_strs
 
@@ -165,7 +174,7 @@ class PytorchRecognitionModel(nn.Module):
         o, olens = self.forward(line, lens)
         oseqs = []
         for seq, seq_len in zip(o, olens):
-            oseqs.append(self.decoder(seq[:, :seq_len]))
+            oseqs.append(self.ctc_decoder(seq[:, :seq_len]))
         return oseqs
 
     @classmethod
@@ -197,7 +206,10 @@ class PytorchRecognitionModel(nn.Module):
         if not 'hyper_parameters' in state_dict:
             raise ValueError('No hyperparameters in state_dict')
         net = cls(**state_dict['hyper_parameters'], codec=codec)
-        net.load_state_dict(state_dict['state_dict'])
+        net.load_state_dict(state_dict['state_dict'], strict=False)
+        # extract context token fields
+        if state_dict['hyper_parameters']['context_token_input']:
+            net.semantic_token_fields = state_dict['TextLineDataModule']['semantic_token_fields']
         return net.eval()
 
 

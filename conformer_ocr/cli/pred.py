@@ -42,8 +42,6 @@ logger = logging.getLogger('kraken')
 @click.command('ocr')
 @click.pass_context
 @click.version_option()
-@click.option('-B', '--batch-size', show_default=True, type=click.INT,
-              default=1, help='batch sample size')
 @click.option('-i', '--input',
               type=(click.Path(exists=True, dir_okay=False, path_type=Path),  # type: ignore
                     click.Path(writable=True, dir_okay=False, path_type=Path)),
@@ -96,9 +94,9 @@ logger = logging.getLogger('kraken')
               show_default=True,
               type=click.Choice(['horizontal-tb', 'vertical-lr', 'vertical-rl']),
               help='Sets principal text direction in serialization output')
-def ocr(ctx, batch_size, input, batch_input, suffix, format_type,
-            pdf_format, serializer, template, device, raise_on_error, threads,
-            model, pad, reorder, base_dir, text_direction):
+def ocr(ctx, input, batch_input, suffix, format_type, pdf_format, serializer,
+        template, device, raise_on_error, threads, model, pad, reorder,
+        base_dir, text_direction):
     """
     Recognition inference with conformer model
 

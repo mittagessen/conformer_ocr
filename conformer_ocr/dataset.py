@@ -67,7 +67,13 @@ def collate_sequences(batch):
     """
     sorted_batch = sorted(batch, key=lambda x: x['image'].shape[2], reverse=True)
     seqs = [x['image'] for x in sorted_batch]
-    semantic_tokens = torch.stack([x['semantic_token'] for x in sorted_batch])
+    stc = True
+    for x in sorted_batch:
+        if not x['semantic_token']:
+            stc = False
+            break
+    if stc:
+        semantic_tokens = torch.stack([x['semantic_token'] for x in sorted_batch])
     seq_lens = torch.LongTensor([seq.shape[2] for seq in seqs])
     max_len = seqs[0].shape[2]
     seqs = torch.stack([F.pad(seq, pad=(0, max_len-seq.shape[2])) for seq in seqs])
@@ -76,11 +82,13 @@ def collate_sequences(batch):
     else:
         labels = torch.cat([x['target'] for x in sorted_batch]).long()
     label_lens = torch.LongTensor([len(x['target']) for x in sorted_batch])
-    return {'image': seqs,
-            'target': labels,
-            'seq_lens': seq_lens,
-            'target_lens': label_lens,
-            'semantic_token': semantic_tokens}
+    ret = {'image': seqs,
+           'target': labels,
+           'seq_lens': seq_lens,
+           'target_lens': label_lens}
+    if stc:
+        ret['semantic_token'] = semantic_tokens
+    return ret
 
 
 class DefaultAugmenter():

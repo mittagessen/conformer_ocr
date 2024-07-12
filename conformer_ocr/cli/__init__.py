@@ -10,6 +10,7 @@ from kraken.lib import log
 
 from .train import train
 from .pred import ocr
+from .test import test
 
 
 def set_logger(logger=None, level=logging.ERROR):
@@ -71,6 +72,7 @@ def cli(ctx, verbose, seed, deterministic, device, precision, autocast):
 
 cli.add_command(train)
 cli.add_command(ocr)
+cli.add_command(test)
 
 if __name__ == '__main__':
     cli()
