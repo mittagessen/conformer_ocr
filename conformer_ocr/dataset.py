@@ -69,7 +69,7 @@ def collate_sequences(batch):
     seqs = [x['image'] for x in sorted_batch]
     stc = True
     for x in sorted_batch:
-        if not x['semantic_token']:
+        if x['semantic_token'] is None:
             stc = False
             break
     if stc:
