@@ -125,7 +125,7 @@ class PytorchRecognitionModel(nn.Module):
             line = line.squeeze(1).transpose(1, 2)
             encoder_outputs, encoder_lens = self.nn.encoder(line, lens)
             probits = self.nn.decoder(encoder_outputs)
-        return probits.to('cpu'), encoder_lens.to('cpu')
+        return probits, encoder_lens
 
     def predict(self, line: torch.Tensor, lens: Optional[torch.Tensor] = None) -> List[List[Tuple[str, int, int, float]]]:
         """
@@ -141,6 +141,8 @@ class PytorchRecognitionModel(nn.Module):
             List of decoded sequences.
         """
         o, olens = self.forward(line, lens)
+        o = o.transpose(1, 2).cpu().float().numpy()
+
         dec_seqs = []
         pred = []
         for seq, seq_len in zip(o, olens):
@@ -159,6 +161,8 @@ class PytorchRecognitionModel(nn.Module):
             lens: Optional tensor containing the sequence lengths of the input batch.
         """
         o, olens = self.forward(line, lens)
+        o = o.transpose(1, 2).cpu().float().numpy()
+
         dec_strs = []
         for seq, seq_len in zip(o, olens):
             locs = self.ctc_decoder(seq[:, :seq_len])
@@ -172,6 +176,8 @@ class PytorchRecognitionModel(nn.Module):
         maximum value of the softmax layer in the region.
         """
         o, olens = self.forward(line, lens)
+        o = o.transpose(1, 2).cpu().float().numpy()
+
         oseqs = []
         for seq, seq_len in zip(o, olens):
             oseqs.append(self.ctc_decoder(seq[:, :seq_len]))
