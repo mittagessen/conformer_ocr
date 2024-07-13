@@ -188,6 +188,7 @@ class RecognitionModel(L.LightningModule):
         self.log('val_word_accuracy', word_accuracy, on_step=False, on_epoch=True, prog_bar=True, logger=True)
         self.log('val_loss', self.val_loss.compute(), on_step=False, on_epoch=True, prog_bar=True, logger=True)
         self.log('val_metric', accuracy, on_step=False, on_epoch=True, prog_bar=False, logger=True)
+        self.log('global_step', self.global_step, on_step=False, on_epoch=True, prog_bar=False, logger=True
 
         self.val_cer.reset()
         self.val_wer.reset()
