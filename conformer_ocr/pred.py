@@ -93,6 +93,7 @@ class PytorchRecognitionModel(nn.Module):
 
         self.codec = codec
         self.ctc_decoder = ctc_decoder
+        self.height = height
 
     def forward(self, line: torch.Tensor, lens: torch.Tensor = None) -> Union[np.ndarray, Tuple[np.ndarray, np.ndarray]]:
         """
@@ -111,11 +112,10 @@ class PytorchRecognitionModel(nn.Module):
             KrakenInputException: Is raised if the channel dimension isn't of
                                   size 1 in the network output.
         """
-        if self.device:
-            line = line.to(self.device)
-        line = line.squeeze(1).transpose(1, 2)
-        encoder_outputs, encoder_lens = self.nn.encoder(line, lens)
-        probits = self.nn.decoder(encoder_outputs)
+        with torch.no_grad():
+            line = line.squeeze(1).transpose(1, 2)
+            encoder_outputs, encoder_lens = self.nn.encoder(line, lens)
+            probits = self.nn.decoder(encoder_outputs)
         return probits, encoder_lens
 
     def predict(self, line: torch.Tensor, lens: Optional[torch.Tensor] = None) -> List[List[Tuple[str, int, int, float]]]:
@@ -132,10 +132,12 @@ class PytorchRecognitionModel(nn.Module):
             List of decoded sequences.
         """
         o, olens = self.forward(line, lens)
+        o = o.transpose(1, 2).cpu().float().numpy()
+
         dec_seqs = []
         pred = []
         for seq, seq_len in zip(o, olens):
-            locs = greedy_decoder(seq[:, :seq_len])
+            locs = self.ctc_decoder(seq[:, :seq_len])
             dec_seqs.append(''.join(x[0] for x in self.codec(locs)))
         return dec_seqs
 
@@ -150,9 +152,11 @@ class PytorchRecognitionModel(nn.Module):
             lens: Optional tensor containing the sequence lengths of the input batch.
         """
         o, olens = self.forward(line, lens)
+        o = o.transpose(1, 2).cpu().float().numpy()
+
         dec_strs = []
         for seq, seq_len in zip(o, olens):
-            locs = self.decoder(seq[:, :seq_len])
+            locs = self.ctc_decoder(seq[:, :seq_len])
             dec_strs.append(''.join(x[0] for x in self.codec.decode(locs)))
         return dec_strs
 
@@ -163,9 +167,11 @@ class PytorchRecognitionModel(nn.Module):
         maximum value of the softmax layer in the region.
         """
         o, olens = self.forward(line, lens)
+        o = o.transpose(1, 2).cpu().float().numpy()
+
         oseqs = []
         for seq, seq_len in zip(o, olens):
-            oseqs.append(self.decoder(seq[:, :seq_len]))
+            oseqs.append(self.ctc_decoder(seq[:, :seq_len]))
         return oseqs
 
     @classmethod
@@ -197,7 +203,7 @@ class PytorchRecognitionModel(nn.Module):
         if not 'hyper_parameters' in state_dict:
             raise ValueError('No hyperparameters in state_dict')
         net = cls(**state_dict['hyper_parameters'], codec=codec)
-        net.load_state_dict(state_dict['state_dict'])
+        net.load_state_dict(state_dict['state_dict'], strict=False)
         return net.eval()
 
 

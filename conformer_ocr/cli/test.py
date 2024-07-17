@@ -40,7 +40,7 @@ logging.getLogger("lightning.fabric.utilities.seed").setLevel(logging.ERROR)
 @click.option('-B', '--batch-size', show_default=True, type=click.INT,
               default=RECOGNITION_HYPER_PARAMS['batch_size'], help='Batch sample size')
 @click.option('-m', '--model', show_default=True, type=click.Path(exists=True, readable=True),
-              multiple=True, help='Model(s) to evaluate')
+              help='Model to evaluate')
 @click.option('-e', '--evaluation-files', show_default=True, default=None, multiple=True,
               callback=_validate_manifests, type=click.File(mode='r', lazy=True),
               help='File(s) with paths to evaluation data.')
@@ -82,7 +82,9 @@ def test(ctx, batch_size, model, evaluation_files, device, pad, workers,
     if not model:
         raise click.UsageError('No model to evaluate given.')
 
+    import torch
     import numpy as np
+
     from torch.utils.data import DataLoader
 
     from torchmetrics.text import CharErrorRate, WordErrorRate
@@ -91,8 +93,8 @@ def test(ctx, batch_size, model, evaluation_files, device, pad, workers,
     from kraken.lib.exceptions import KrakenInputException
     from kraken.lib.dataset import (ArrowIPCRecognitionDataset,
                                     GroundTruthDataset, ImageInputTransforms,
-                                    PolygonGTDataset, collate_sequences,
-                                    compute_confusions, global_align)
+                                    PolygonGTDataset, compute_confusions,
+                                    global_align, collate_sequences)
     from kraken.lib.progress import KrakenProgressBar
     from kraken.lib.xml import XMLPage
     from kraken.serialization import render_report
@@ -101,11 +103,11 @@ def test(ctx, batch_size, model, evaluation_files, device, pad, workers,
 
     logger.info('Building test set from {} line images'.format(len(test_set) + len(evaluation_files)))
 
-    nn = {}
-    for p in model:
-        message('Loading model {}\t'.format(p), nl=False)
-        nn[p] = PytorchRecognitionModel.load_checkpoint(p).to(device)
-        message('\u2713', fg='green')
+    message('Loading model {}\t'.format(model), nl=False)
+    nn = PytorchRecognitionModel.load_checkpoint(model).to(device)
+    message('\u2713', fg='green')
+
+    dataset_kwargs = {}
 
     pin_ds_mem = False
     if device != 'cpu':
@@ -119,7 +121,6 @@ def test(ctx, batch_size, model, evaluation_files, device, pad, workers,
     if len(test_set) == 0:
         raise click.UsageError('No evaluation data was provided to the test command. Use `-e` or the `test_set` argument.')
 
-    dataset_kwargs = {}
     if fixed_splits:
         if format_type != "binary":
             logger.warning("--fixed-splits can only be use with data using binary format")
@@ -146,80 +147,82 @@ def test(ctx, batch_size, model, evaluation_files, device, pad, workers,
     wer_list = []
 
     with threadpool_limits(limits=threads):
-        for p, net in nn.items():
-            algn_gt: List[str] = []
-            algn_pred: List[str] = []
-            chars = 0
-            error = 0
-            message('Evaluating {}'.format(p))
-            logger.info('Evaluating {}'.format(p))
-            ts = ImageInputTransforms(net.channels, net.height, 0, 1, (net.pad, 0), False)
-            ds = DatasetClass(normalization=normalization,
-                              whitespace_normalization=normalize_whitespace,
-                              reorder=reorder,
-                              im_transforms=ts,
-                              **dataset_kwargs)
-            for line in test_set:
+        algn_gt: List[str] = []
+        algn_pred: List[str] = []
+        chars = 0
+        error = 0
+        message('Evaluating {}'.format(model))
+        logger.info('Evaluating {}'.format(model))
+        ts = ImageInputTransforms(batch_size, nn.height, 0, 1, (pad, 0), False)
+        ds = DatasetClass(normalization=normalization,
+                          whitespace_normalization=normalize_whitespace,
+                          reorder=reorder,
+                          im_transforms=ts,
+                          augmentation=False,
+                          **dataset_kwargs)
+        for line in test_set:
+            try:
+                ds.add(**line)
+            except ValueError as e:
+                raise
+                logger.info(e)
+
+        # don't encode validation set as the alphabets may not match causing encoding failures
+        ds.no_encode()
+        ds_loader = DataLoader(ds,
+                               batch_size=batch_size,
+                               num_workers=workers,
+                               pin_memory=pin_ds_mem,
+                               collate_fn=collate_sequences)
+
+        test_cer = CharErrorRate()
+        test_wer = WordErrorRate()
+
+        with KrakenProgressBar() as progress:
+            batches = len(ds_loader)
+            pred_task = progress.add_task('Evaluating', total=batches, visible=True if not ctx.meta['verbose'] else False)
+
+            for batch in ds_loader:
+                im = batch['image']
+                text = batch['target']
+                lens = batch['seq_lens']
+                im = im.to(device)
                 try:
-                    ds.add(**line)
-                except ValueError as e:
-                    logger.info(e)
+                    pred = nn.predict_string(im, lens)
+                    for x, y in zip(pred, text):
+                        chars += len(y)
+                        c, algn1, algn2 = global_align(y, x)
+                        algn_gt.extend(algn1)
+                        algn_pred.extend(algn2)
+                        error += c
+                        test_cer.update(x, y)
+                        test_wer.update(x, y)
 
-            # don't encode validation set as the alphabets may not match causing encoding failures
-            ds.no_encode()
-            ds_loader = DataLoader(ds,
-                                   batch_size=batch_size,
-                                   num_workers=workers,
-                                   pin_memory=pin_ds_mem,
-                                   collate_fn=collate_sequences)
+                except FileNotFoundError as e:
+                    batches -= 1
+                    progress.update(pred_task, total=batches)
+                    logger.warning('{} {}. Skipping.'.format(e.strerror, e.filename))
+                except KrakenInputException as e:
+                    batches -= 1
+                    progress.update(pred_task, total=batches)
+                    logger.warning(str(e))
+                progress.update(pred_task, advance=1)
 
-            test_cer = CharErrorRate()
-            test_wer = WordErrorRate()
-
-            with KrakenProgressBar() as progress:
-                batches = len(ds_loader)
-                pred_task = progress.add_task('Evaluating', total=batches, visible=True if not ctx.meta['verbose'] else False)
-
-                for batch in ds_loader:
-                    im = batch['image']
-                    text = batch['target']
-                    lens = batch['seq_lens']
-                    try:
-                        pred = net.predict_string(im, lens)
-                        for x, y in zip(pred, text):
-                            chars += len(y)
-                            c, algn1, algn2 = global_align(y, x)
-                            algn_gt.extend(algn1)
-                            algn_pred.extend(algn2)
-                            error += c
-                            test_cer.update(x, y)
-                            test_wer.update(x, y)
-
-                    except FileNotFoundError as e:
-                        batches -= 1
-                        progress.update(pred_task, total=batches)
-                        logger.warning('{} {}. Skipping.'.format(e.strerror, e.filename))
-                    except KrakenInputException as e:
-                        batches -= 1
-                        progress.update(pred_task, total=batches)
-                        logger.warning(str(e))
-                    progress.update(pred_task, advance=1)
-
-            cer_list.append(1.0 - test_cer.compute())
-            wer_list.append(1.0 - test_wer.compute())
-            confusions, scripts, ins, dels, subs = compute_confusions(algn_gt, algn_pred)
-            rep = render_report(p,
-                                chars,
-                                error,
-                                cer_list[-1],
-                                wer_list[-1],
-                                confusions,
-                                scripts,
-                                ins,
-                                dels,
-                                subs)
-            logger.info(rep)
-            message(rep)
+        cer_list.append(1.0 - test_cer.compute())
+        wer_list.append(1.0 - test_wer.compute())
+        confusions, scripts, ins, dels, subs = compute_confusions(algn_gt, algn_pred)
+        rep = render_report(model,
+                            chars,
+                            error,
+                            cer_list[-1],
+                            wer_list[-1],
+                            confusions,
+                            scripts,
+                            ins,
+                            dels,
+                            subs)
+        logger.info(rep)
+        message(rep)
 
     logger.info('Average character accuracy: {:0.2f}%, (stddev: {:0.2f})'.format(np.mean(cer_list) * 100, np.std(cer_list) * 100))
     message('Average character accuracy: {:0.2f}%, (stddev: {:0.2f})'.format(np.mean(cer_list) * 100, np.std(cer_list) * 100))
