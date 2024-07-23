@@ -23,8 +23,9 @@ from torch.utils.data import DataLoader, Subset, random_split
 
 from kraken.lib.xml import XMLPage
 from kraken.lib.codec import PytorchCodec
-from kraken.lib.dataset import (ArrowIPCRecognitionDataset, PolygonGTDataset,
-                                ImageInputTransforms, collate_sequences)
+from kraken.lib.dataset import (ArrowIPCRecognitionDataset,
+                                ImageInputTransforms,
+                                collate_sequences)
 
 if TYPE_CHECKING:
     from os import PathLike

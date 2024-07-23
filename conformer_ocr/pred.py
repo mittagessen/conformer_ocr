@@ -94,6 +94,9 @@ class PytorchRecognitionModel(nn.Module):
         self.codec = codec
         self.ctc_decoder = ctc_decoder
         self.height = height
+        self.channels = 1
+        self.width = 0
+
 
     def forward(self, line: torch.Tensor, lens: torch.Tensor = None) -> Union[np.ndarray, Tuple[np.ndarray, np.ndarray]]:
         """
@@ -207,31 +210,45 @@ class PytorchRecognitionModel(nn.Module):
         return net.eval()
 
 
-def checkpoint_to_safetensors(checkpoint_path: 'PathLike',
-                              output_path: 'PathLike'):
+def checkpoint_to_safetensors(model: 'nn.Module' = None,
+                              data_module: 'nn.Module' = None,
+                              checkpoint_path: 'PathLike' = None,
+                              output_path: 'PathLike',
+                              metadata: 'PathLike'):
     """
     Converts a pytorch lightning checkpoint of a RecognitionModel and
     TextLineDataModule into a safetensors output file containing the necessary
     metadata for inference.
+
+    Args:
     """
     state_dict = torch.load(checkpoint_path, map_location='cpu')
     if not 'TextLineDataModule' in state_dict:
         raise ValueError('Checkpoint does not contain data module state.')
     codec = state_dict['TextLineDataModule']['codec']
     net = RecognitionModel.load_from_checkpoint(checkpoint_path, map_location='cpu')
-    metadata = {'codec': codec,
-                'seg_type': 'baselines',
-                'one_channel_mode': 'L',
-                'model_type': 'recognition',
-                'legacy_polygons': False,
-                'hyper_params': dict(net.hparams)}
+    kraken_metadata = {'codec': codec,
+                       'seg_type': 'baselines',
+                       'one_channel_mode': 'L',
+                       'model_type': 'recognition',
+                       'legacy_polygons': False,
+                       'hyper_params': dict(net.hparams),
+                       'kraken_min_version': 5.3,
+                      }
+
+    if metadata:
+        with open(metadata, 'r') as fp:
+            metadata = json.load(fp)
+    else:
+        metadata = {}
 
     with tempfile.TemporaryDirectory() as tmp_output_dir:
 
         safetensors.torch.save_file(net.nn.state_dict(),
                                     filename=tmp_output_dir + '/model.safetensors')
-        with open(tmp_output_dir + '/metadata.json', 'w') as fp:
+        with open(tmp_output_dir + '/_kraken_metadata.json', 'w') as fp:
             json.dump(metadata, fp)
         with tarfile.open(output_path, 'w') as tar_p:
             tar_p.add(tmp_output_dir + '/model.safetensors', arcname='model.safetensors')
+            tar_p.add(tmp_output_dir + '/_kraken_metadata.json', arcname='_kraken_metadata.json')
             tar_p.add(tmp_output_dir + '/metadata.json', arcname='metadata.json')
