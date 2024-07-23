@@ -29,16 +29,19 @@ def train_model(trial: 'optuna.trial.Trial',
 
     hyper_params = RECOGNITION_HYPER_PARAMS.copy()
     hyper_params['epochs'] = epochs
-    hyper_params['cos_t_max'] = hyper_params['cos_t_max']
-    hyper_params['batch_size'] = 32
+    hyper_params['cos_t_max'] = epochs
+    hyper_params['batch_size'] = 16
 
     hyper_params['warmup'] = trial.suggest_int('warmup', 10000, 50000, log=True)
 #    hyper_params['height'] = trial.suggest_int('height', 48, 128)
     hyper_params['lr'] = trial.suggest_loguniform('lr', 1e-8, 1e-3)
     hyper_params['cos_min_lr'] = hyper_params['lr']/10
     hyper_params['weight_decay'] = trial.suggest_loguniform('weight_decay', 1e-6, 1e-3)
-    hyper_params['subsampling_factor'] = trial.suggest_categorical('subsampling_factor', [2, 4, 8])
-    hyper_params['encoder_dim'] = trial.suggest_categorical('encoder_dim', [144, 256, 320])
+    hyper_params['subsampling_factor'] = trial.suggest_categorical('subsampling_factor', [4, 8])
+    hyper_params['encoder_dim'] = 512
+    hyper_params['subsampling_conv_channels'] = 256
+    hyper_params['num_encoder_layers'] = 17
+    hyper_params['num_attention_heads'] = 8
 
     data_module = TextLineDataModule(training_data=training_data,
                                      evaluation_data=evaluation_data,
@@ -57,7 +60,7 @@ def train_model(trial: 'optuna.trial.Trial',
 
     trainer = Trainer(accelerator=accelerator,
                       devices=device,
-                      precision='bf16',
+                      precision='bf16-mixed',
                       max_epochs=hyper_params['epochs'],
                       min_epochs=hyper_params['min_epochs'],
                       enable_progress_bar=True,
