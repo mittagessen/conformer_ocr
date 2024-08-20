@@ -42,7 +42,7 @@ class TransformerDecoder(nn.Module):
         self.embedding = nn.Embedding(num_embeddings=num_classes,
                                       embedding_dim=decoder_dim)
         self.fc = nn.Linear(decoder_dim, num_classes)
-        self.positional_encoding = PositionalEncoding()
+        self.positional_encoding = PositionalEncoding(decoder_dim)
         self.sos_id = sos_id
         self.eos_id = eos_id
 
