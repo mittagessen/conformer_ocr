@@ -125,11 +125,11 @@ class ConformerEncoder(nn.Module):
         subsampling_factor: subsampling factor. Must be a power of 2.
 
     Inputs: inputs, input_lengths
-        - **inputs** (batch, time, dim): Tensor containing input vector
+        - **inputs** (batch, seq_len, dim): Tensor containing input vector
         - **input_lengths** (batch): list of sequence input lengths
 
     Returns: outputs, output_lengths
-        - **outputs** (batch, out_channels, time): Tensor produces by conformer encoder.
+        - **outputs** (batch, out_channels, seq_len): Tensor produces by conformer encoder.
         - **output_lengths** (batch): list of sequence output lengths
     """
     def __init__(
@@ -169,16 +169,6 @@ class ConformerEncoder(nn.Module):
             conv_kernel_size=conv_kernel_size,
             half_step_residual=half_step_residual,
         ) for _ in range(num_layers)])
-
-    def count_parameters(self) -> int:
-        """ Count parameters of encoder """
-        return sum([p.numel() for p in self.parameters()])
-
-    def update_dropout(self, dropout_p: float) -> None:
-        """ Update dropout probability of encoder """
-        for name, child in self.named_children():
-            if isinstance(child, nn.Dropout):
-                child.p = dropout_p
 
     def forward(self, inputs: Tensor, input_lengths: Tensor) -> Tuple[Tensor, Tensor]:
         """

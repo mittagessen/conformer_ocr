@@ -29,6 +29,7 @@ from torchmetrics.text import CharErrorRate, WordErrorRate
 from torchmetrics.aggregation import MeanMetric
 
 from conformer_ocr.conformer.encoder import ConformerEncoder
+from conformer_ocr.conformer.decoder import TransformerDecoder
 
 from kraken.lib.ctc_decoder import greedy_decoder
 
@@ -39,6 +40,8 @@ logger = logging.getLogger(__name__)
 class RecognitionModel(L.LightningModule):
     def __init__(self,
                  num_classes: int,
+                 sos_id: int,
+                 eos_id: int,
                  batches_per_epoch: int = 0,
                  pad=16,
                  batch_size=32,
@@ -58,8 +61,11 @@ class RecognitionModel(L.LightningModule):
                  warmup=15000,
                  height=96,
                  encoder_dim=512,
+                 decoder_dim=512,
                  num_encoder_layers=18,
                  num_attention_heads=8,
+                 num_decoder_layers=4,
+                 num_decoder_heads=8,
                  feed_forward_expansion_factor=4,
                  conv_expansion_factor=2,
                  input_dropout_p=0.1,
@@ -111,12 +117,19 @@ class RecognitionModel(L.LightningModule):
                                    half_step_residual=half_step_residual,
                                    subsampling_conv_channels=subsampling_conv_channels,
                                    subsampling_factor=subsampling_factor)
-        decoder = nn.Linear(encoder_dim, num_classes, bias=True)
+
+        decoder = TransformerDecoder(num_classes,
+                                     decoder_dim=decoder_dim,
+                                     num_decoder_heads=num_decoder_heads,
+                                     num_decoder_layers=num_decoder_layers,
+                                     sos_id=sos_id,
+                                     eos_id=eos_id)
+
         self.nn = nn.ModuleDict({'encoder': encoder,
                                  'decoder': decoder})
 
         # loss
-        self.criterion = nn.CTCLoss(reduction='sum', zero_infinity=True)
+        self.criterion = nn.CrossEntropyLoss()
 
         self.val_cer = CharErrorRate()
         self.val_wer = WordErrorRate()
@@ -124,25 +137,26 @@ class RecognitionModel(L.LightningModule):
 
     def forward(self, x, seq_lens=None):
         encoder_outputs, encoder_lens = self.nn['encoder'](x, seq_lens)
-        return self.nn['decoder'](encoder_outputs), encoder_lens
+        encoder_pad_mask = (torch.ones(encoder_outputs.size(1), encoder_outputs.size(0)).cumsum(dim=0) > encoder_lens).T
+        return self.nn['decoder'].predict(encoder_outputs, encoder_pad_mask), encoder_lens
 
     def _step(self, batch):
         try:
             input, target = batch['image'], batch['target']
             input = input.squeeze(1).transpose(1, 2)
-            seq_lens, label_lens = batch['seq_lens'], batch['target_lens']
-            encoder_outputs, encoder_lens = self.nn['encoder'](input, seq_lens)
-            probits = self.nn['decoder'](encoder_outputs)
-            logits = nn.functional.log_softmax(probits, dim=-1)
 
-            # NCW -> WNC
-            loss = self.criterion(logits.transpose(0, 1),  # type: ignore
-                                  target,
-                                  encoder_lens,
-                                  label_lens)
+            encoder_outputs, encoder_lens = self.nn['encoder'](input, batch['seq_lens'])
+            # memory padding masks
+            encoder_pad_mask = (torch.ones(encoder_outputs.size(1), encoder_outputs.size(0)).cumsum(dim=0) > encoder_lens).T
+            logits = self.nn['decoder'](target,
+                               encoder_outputs,
+                               encoder_pad_mask)  # NWC
+
+            loss = self.criterion(logits.view(-1, logits.size(-1)), target.view(-1))
             return {'loss': loss,
-                    'probits': probits,
+                    'logits': logits,
                     'output_lens': encoder_lens}
+
         except RuntimeError as e:
             if is_oom_error(e):
                 logger.warning('Out of memory error in trainer. Skipping batch and freeing caches.')
@@ -160,7 +174,7 @@ class RecognitionModel(L.LightningModule):
     def validation_step(self, batch, batch_idx):
         o = self._step(batch)
         if o is not None:
-            probits = o['probits'].transpose(1, 2).cpu().float().numpy()
+            probits = o['logits'].transpose(1, 2).cpu().float().numpy()
 
             pred = []
             for seq, seq_len in zip(probits, o['output_lens']):

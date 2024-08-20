@@ -36,9 +36,9 @@ from typing import (Any, Callable, Dict, Literal, TYPE_CHECKING, Union, Tuple,
                     Optional, List)
 
 from conformer_ocr.conformer.encoder import ConformerEncoder
+from conformer_ocr.codec import TransformerCodec
 
 from kraken.containers import Segmentation, BaselineLine
-from kraken.lib.codec import PytorchCodec
 from kraken.lib.ctc_decoder import greedy_decoder
 
 if TYPE_CHECKING:
@@ -64,7 +64,7 @@ class PytorchRecognitionModel(nn.Module):
                  half_step_residual: bool,
                  subsampling_conv_channels: int,
                  subsampling_factor: int,
-                 codec: PytorchCodec,
+                 codec: TransformerCodec,
                  ctc_decoder=greedy_decoder,
                  **kwargs):
         """
@@ -186,7 +186,7 @@ class PytorchRecognitionModel(nn.Module):
             metadata = json.load(tf.extractfile('metadata.json'))
             if not 'codec' in metadata:
                 raise ValueError('No codec in metadata record')
-            codec = PytorchCodec(metadata['codec'])
+            codec = TransformerCodec(metadata['codec'])
             if not 'hyper_params' in metadata:
                 raise ValueError('No hyperparameters in metadata record')
             net = cls(**metadata['hyper_params'], codec=codec)
@@ -202,7 +202,7 @@ class PytorchRecognitionModel(nn.Module):
         state_dict = torch.load(path, map_location='cpu')
         if not 'TextLineDataModule' in state_dict:
             raise ValueError('Checkpoint does not contain data module state.')
-        codec = PytorchCodec(state_dict['TextLineDataModule']['codec'])
+        codec = TransformerCodec(state_dict['TextLineDataModule']['codec'])
         if not 'hyper_parameters' in state_dict:
             raise ValueError('No hyperparameters in state_dict')
         net = cls(**state_dict['hyper_parameters'], codec=codec)
@@ -213,8 +213,8 @@ class PytorchRecognitionModel(nn.Module):
 def checkpoint_to_safetensors(model: 'nn.Module' = None,
                               data_module: 'nn.Module' = None,
                               checkpoint_path: 'PathLike' = None,
-                              output_path: 'PathLike',
-                              metadata: 'PathLike'):
+                              output_path: 'PathLike' = None,
+                              metadata: 'PathLike' = None):
     """
     Converts a pytorch lightning checkpoint of a RecognitionModel and
     TextLineDataModule into a safetensors output file containing the necessary
