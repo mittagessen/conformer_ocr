@@ -171,7 +171,7 @@ class RecognitionModel(L.LightningModule):
     def validation_step(self, batch, batch_idx):
         o = self._step(batch)
         if o is not None:
-            y_hat = o['logits'].max(1).indices
+            y_hat = o['logits'].max(1).indices.cpu().float().numpy()
             preds = []
             decoded_targets = []
             for labels in y_hat:
