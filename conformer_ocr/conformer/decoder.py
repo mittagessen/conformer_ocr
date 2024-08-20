@@ -66,6 +66,7 @@ class TransformerDecoder(nn.Module):
         tgt_embed = self.positional_encoding(self.embedding(tgt).permute(1, 0, 2))
         tgt_mask = nn.Transformer.generate_square_subsequent_mask(tgt_embed.size(0),
                                                                   tgt.device)
+        print(f'tgt_embed: {tgt_embed.shape} tgt_mask: {tgt_mask.shape} memory: {memory.shape} mem_mask: {memory_key_padding_mask.shape}')
         decoder_out = self.decoder(tgt=tgt_embed,
                                    memory=memory,
                                    tgt_mask=tgt_mask,
