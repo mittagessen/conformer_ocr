@@ -29,7 +29,8 @@ from typing import (TYPE_CHECKING, Any, Callable, List, Literal, Optional,
 from torch.utils.data import DataLoader, Subset, random_split
 
 from kraken.lib.xml import XMLPage
-from kraken.lib.dataset import ImageInputTransforms, collate_sequences, DefaultAugmenter
+from kraken.lib.dataset import ImageInputTransforms, collate_sequences
+from kraken.lib.dataset.recognition import DefaultAugmenter
 
 from conformer_ocr.codec import TransformerCodec
 
