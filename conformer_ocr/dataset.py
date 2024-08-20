@@ -41,7 +41,6 @@ from torchvision import transforms
 from torch.utils.data import Dataset
 
 from kraken.lib import functional_im_transforms as F_t
-from kraken.lib.codec import PytorchCodec
 from kraken.lib.exceptions import KrakenEncodeException, KrakenInputException
 
 if TYPE_CHECKING:
@@ -348,7 +347,7 @@ class ArrowIPCRecognitionDataset(Dataset):
                 raise KrakenInputException('empty text line')
         return text
 
-    def encode(self, codec: Optional[PytorchCodec] = None) -> None:
+    def encode(self, codec: Optional[TransformerCodec] = None) -> None:
         """
         Adds a codec to the dataset.
         """
@@ -366,7 +365,7 @@ class ArrowIPCRecognitionDataset(Dataset):
                 except KrakenInputException:
                     pass
         else:
-            self.codec = PytorchCodec(''.join(self.alphabet.keys()))
+            self.codec = TransformerCodec(''.join(self.alphabet.keys()))
 
     def no_encode(self) -> None:
         """
