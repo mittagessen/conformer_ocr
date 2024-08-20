@@ -175,7 +175,7 @@ class RecognitionModel(L.LightningModule):
             preds = []
             decoded_targets = []
             for labels in y_hat:
-                preds.append(''.join([x[0] for x in self.trainer.datamodule.val_codec.decode([(x, 0, 0, 0) for x in y_hat])]))
+                preds.append(''.join([x[0] for x in self.trainer.datamodule.val_codec.decode([(x, 0, 0, 0) for x in labels])]))
             for target in batch['target']:
                 decoded_targets.append(''.join([x[0] for x in self.trainer.datamodule.val_codec.decode([(x, 0, 0, 0) for x in target])]))
             self.val_cer.update(preds, decoded_targets)
