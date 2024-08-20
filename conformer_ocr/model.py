@@ -149,8 +149,8 @@ class RecognitionModel(L.LightningModule):
             # memory padding masks
             encoder_pad_mask = (torch.ones(encoder_outputs.size(1), encoder_outputs.size(0), device=encoder_lens.device).cumsum(dim=0) > encoder_lens).T
             logits = self.nn['decoder'](target,
-                               encoder_outputs,
-                               encoder_pad_mask)  # NWC
+                                        encoder_outputs,
+                                        encoder_pad_mask)  # NWC
 
             loss = self.criterion(logits.view(-1, logits.size(-1)), target.view(-1))
             return {'loss': loss,
