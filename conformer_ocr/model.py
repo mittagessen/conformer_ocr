@@ -147,7 +147,7 @@ class RecognitionModel(L.LightningModule):
 
             encoder_outputs, encoder_lens = self.nn['encoder'](input, batch['seq_lens'])
             # memory padding masks
-            encoder_pad_mask = (torch.ones(encoder_outputs.size(1), encoder_outputs.size(0)).cumsum(dim=0) > encoder_lens).T
+            encoder_pad_mask = (torch.ones(encoder_outputs.size(1), encoder_outputs.size(0), device=encoder_lens.device).cumsum(dim=0) > encoder_lens).T
             logits = self.nn['decoder'](target,
                                encoder_outputs,
                                encoder_pad_mask)  # NWC
