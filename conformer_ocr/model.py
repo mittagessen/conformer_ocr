@@ -152,7 +152,7 @@ class RecognitionModel(L.LightningModule):
                                         encoder_outputs,
                                         encoder_pad_mask)  # NWC
 
-            loss = self.criterion(logits.view(-1, logits.size(-1)), target.view(-1))
+            loss = self.criterion(logits.contiguous().view(-1, logits.size(-1)), target.contiguous().view(-1))
             return {'loss': loss,
                     'logits': logits,
                     'output_lens': encoder_lens}
