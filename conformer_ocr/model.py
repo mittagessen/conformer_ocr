@@ -31,9 +31,6 @@ from torchmetrics.aggregation import MeanMetric
 from conformer_ocr.conformer.encoder import ConformerEncoder
 from conformer_ocr.conformer.decoder import TransformerDecoder
 
-from kraken.lib.ctc_decoder import greedy_decoder
-
-
 logger = logging.getLogger(__name__)
 
 
@@ -174,19 +171,15 @@ class RecognitionModel(L.LightningModule):
     def validation_step(self, batch, batch_idx):
         o = self._step(batch)
         if o is not None:
-            probits = o['logits'].transpose(1, 2).cpu().float().numpy()
-
-            pred = []
-            for seq, seq_len in zip(probits, o['output_lens']):
-                locs = greedy_decoder(seq[:, :seq_len])
-                pred.append(''.join(x[0] for x in self.trainer.datamodule.val_codec.decode(locs)))
-            idx = 0
+            y_hat = o['logits'].max(1).indices
+            preds = []
             decoded_targets = []
-            for offset in batch['target_lens']:
-                decoded_targets.append(''.join([x[0] for x in self.trainer.datamodule.val_codec.decode([(x, 0, 0, 0) for x in batch['target'][idx:idx+offset]])]))
-                idx += offset
-            self.val_cer.update(pred, decoded_targets)
-            self.val_wer.update(pred, decoded_targets)
+            for labels in y_hat:
+                preds.append(''.join([x[0] for x in self.trainer.datamodule.val_codec.decode([(x, 0, 0, 0) for x in y_hat])]))
+            for target in batch['target']:
+                decoded_targets.append(''.join([x[0] for x in self.trainer.datamodule.val_codec.decode([(x, 0, 0, 0) for x in target])]))
+            self.val_cer.update(preds, decoded_targets)
+            self.val_wer.update(preds, decoded_targets)
             self.val_loss.update(o['loss'])
 
     def on_validation_epoch_end(self):
