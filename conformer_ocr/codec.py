@@ -19,7 +19,7 @@ graphemes.
 """
 import logging
 from collections import Counter
-from typing import Dict, List, Sequence, Set, Union
+from typing import Dict, List, Sequence, Set, Union, Tuple
 
 import numpy as np
 from torch import IntTensor
