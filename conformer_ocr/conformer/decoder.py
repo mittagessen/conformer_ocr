@@ -51,24 +51,19 @@ class TransformerDecoder(nn.Module):
         Forward propagate a `inputs` for decoder training.
 
         Args:
-            tgt (torch.FloatTensor): Teacher forcing target length
-            memory (torch.FloatTensor): A input sequence passed to encoder. Typically for inputs this will be a padded
-                `FloatTensor` of size ``(batch, seq_length, dimension)``.
-            input_lengths (torch.LongTensor): The length of input tensor. ``(batch)``
+            tgt: Teacher forcing target
+            memory:
+            memory_key_padding_mask:
 
         Returns:
-            (Tensor, Tensor)
-
-            * outputs (torch.FloatTensor): A output sequence of encoder. `FloatTensor` of size
-                ``(batch, seq_length, dimension)``
-            * output_lengths (torch.LongTensor): The length of output tensor. ``(batch)``
+            Tensor
         """
         tgt_embed = self.positional_encoding(self.embedding(tgt).permute(1, 0, 2))
         tgt_mask = nn.Transformer.generate_square_subsequent_mask(tgt_embed.size(0),
                                                                   tgt.device)
         print(f'tgt_embed: {tgt_embed.shape} tgt_mask: {tgt_mask.shape} memory: {memory.shape} mem_mask: {memory_key_padding_mask.shape}')
         decoder_out = self.decoder(tgt=tgt_embed,
-                                   memory=memory,
+                                   memory=memory.permute(1, 0, 2), # WNC
                                    tgt_mask=tgt_mask,
                                    memory_key_padding_mask=memory_key_padding_mask)
         logits = self.fc(decoder_out)  # WNC
