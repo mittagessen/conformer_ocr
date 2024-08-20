@@ -18,6 +18,7 @@ Utility functions for data loading and training of VGSL networks.
 import io
 import json
 import torch
+import torch.nn.functional as F
 import numpy as np
 import pyarrow as pa
 import traceback
@@ -39,7 +40,6 @@ from functools import partial
 from PIL import Image
 from torchvision import transforms
 from torch.utils.data import Dataset
-from torch.nn.utils.rnn import pad_sequence
 
 from kraken.lib import functional_im_transforms as F_t
 from kraken.lib.exceptions import KrakenEncodeException, KrakenInputException
@@ -70,11 +70,13 @@ def collate_sequences(batch):
     sorted_batch = sorted(batch, key=lambda x: x['image'].shape[2], reverse=True)
     seqs = [x['image'] for x in sorted_batch]
     seq_lens = torch.LongTensor([seq.shape[2] for seq in seqs])
-    seqs = pad_sequence(seqs, batch_first=True)
+    max_len = seqs[0].shape[2]
+    seqs = torch.stack([F.pad(seq, pad=(0, max_len-seq.shape[2])) for seq in seqs])
     if isinstance(sorted_batch[0]['target'], str):
         labels = [x['target'] for x in sorted_batch]
     else:
-        labels = pad_sequence([x['target'] for x in sorted_batch], batch_first=True).long()
+        max_label_len = max(len(x) for x in labels)
+        labels = torch.stack([F.pad(labs, pad=(0, max_label_len-len(labs))) for labs in labels]).long()
     label_lens = torch.LongTensor([len(x['target']) for x in sorted_batch])
     return {'image': seqs, 'target': labels, 'seq_lens': seq_lens, 'target_lens': label_lens}
 
