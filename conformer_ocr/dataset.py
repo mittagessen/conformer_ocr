@@ -29,7 +29,7 @@ from typing import (TYPE_CHECKING, Any, Callable, List, Literal, Optional,
 from torch.utils.data import DataLoader, Subset, random_split
 
 from kraken.lib.xml import XMLPage
-from kraken.lib.dataset import ImageInputTransforms, collate_sequences
+from kraken.lib.dataset import ImageInputTransforms
 from kraken.lib.dataset.recognition import DefaultAugmenter
 
 from conformer_ocr.codec import TransformerCodec
@@ -39,6 +39,7 @@ from functools import partial
 from PIL import Image
 from torchvision import transforms
 from torch.utils.data import Dataset
+from torch.nn.utils.rnn import pad_sequence
 
 from kraken.lib import functional_im_transforms as F_t
 from kraken.lib.exceptions import KrakenEncodeException, KrakenInputException
@@ -60,6 +61,22 @@ def _validation_worker_init_fn(worker_id):
         at info level about the seed being changed. """
     from lightning.pytorch import seed_everything
     seed_everything(42)
+
+
+def collate_sequences(batch):
+    """
+    Sorts and pads sequences.
+    """
+    sorted_batch = sorted(batch, key=lambda x: x['image'].shape[2], reverse=True)
+    seqs = [x['image'] for x in sorted_batch]
+    seq_lens = torch.LongTensor([seq.shape[2] for seq in seqs])
+    seqs = pad_sequence(seqs, batch_first=True)
+    if isinstance(sorted_batch[0]['target'], str):
+        labels = [x['target'] for x in sorted_batch]
+    else:
+        labels = pad_sequence([x['target'] for x in sorted_batch], batch_first=True).long()
+    label_lens = torch.LongTensor([len(x['target']) for x in sorted_batch])
+    return {'image': seqs, 'target': labels, 'seq_lens': seq_lens, 'target_lens': label_lens}
 
 
 class TextLineDataModule(L.LightningDataModule):
