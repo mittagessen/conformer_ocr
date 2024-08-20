@@ -75,8 +75,8 @@ def collate_sequences(batch):
     if isinstance(sorted_batch[0]['target'], str):
         labels = [x['target'] for x in sorted_batch]
     else:
-        max_label_len = max(len(x) for x in labels)
-        labels = torch.stack([F.pad(labs, pad=(0, max_label_len-len(labs))) for labs in labels]).long()
+        max_label_len = max(len(x['target']) for x in sorted_batch)
+        labels = torch.stack([F.pad(x['target'], pad=(0, max_label_len-len(x['target']))) for x in sorted_batch]).long()
     label_lens = torch.LongTensor([len(x['target']) for x in sorted_batch])
     return {'image': seqs, 'target': labels, 'seq_lens': seq_lens, 'target_lens': label_lens}
 
