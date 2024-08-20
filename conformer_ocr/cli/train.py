@@ -328,12 +328,17 @@ def train(ctx, load, batch_size, pad, line_height, output, freq, quit, epochs,
         model = RecognitionModel.load_from_checkpoint(load,
                                                       num_classes=data_module.num_classes,
                                                       map_location=torch.device('cpu'),
+                                                      sos_id=data_module.sos_id,
+                                                      eos_id=data_module.eos_id,
                                                       **hyper_params)
+
     else:
         message('Initializing model.')
         model = RecognitionModel(**hyper_params,
                                  num_classes=data_module.num_classes,
-                                 batches_per_epoch=len(data_module.train_dataloader()))
+                                 batches_per_epoch=len(data_module.train_dataloader()),
+                                 sos_id=data_module.sos_id,
+                                 eos_id=data_module.eos_id)
 
     if len(data_module.train_set) == 0:
         raise click.UsageError('No valid training data was provided to the train command. Use `-t` or the `ground_truth` argument.')
