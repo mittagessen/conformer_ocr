@@ -172,7 +172,7 @@ class RecognitionModel(L.LightningModule):
         # memory padding masks
         encoder_pad_mask = (torch.ones(encoder_outputs.size(1), encoder_outputs.size(0), device=encoder_lens.device).cumsum(dim=0) > encoder_lens).T
         # TODO: make batching work, implement cache
-        y_hat = self.nn['decoder'].generate(encoder_outputs, encoder_pad_mask).cpu().float().numpy()[0]
+        y_hat = self.nn['decoder'].generate(encoder_outputs, encoder_pad_mask)
         pred = ''.join([x[0] for x in self.trainer.datamodule.val_codec.decode([(x, 0, 0, 0) for x in y_hat])])
         decoded_target = ''.join([x[0] for x in self.trainer.datamodule.val_codec.decode([(x, 0, 0, 0) for x in batch['target'][0]])])
         self.val_cer.update(pred, decoded_target)
