@@ -370,9 +370,6 @@ def train(ctx, load, batch_size, pad, line_height, output, freq, quit, epochs,
                       callbacks=cbs,
                       **val_check_interval)
 
-    message('Compiling model')
-    model = torch.compile(model)
-
     with threadpool_limits(limits=threads):
         trainer.fit(model, data_module)
 
