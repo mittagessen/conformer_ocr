@@ -98,7 +98,7 @@ class TransformerDecoder(nn.Module):
         """
         output_tokens = []
         if not prompt:
-            prompt = torch.LongTensor([self.sos_id]).unsqueeze(0)  # NW
+            prompt = torch.LongTensor([self.sos_id], device=memory.device).unsqueeze(0)  # NW
 
         while len(output_tokens) < max_len:
             prompt_embedding = self.positional_encoding(self.embedding(prompt).permute(1, 0, 2))
@@ -113,6 +113,6 @@ class TransformerDecoder(nn.Module):
                 break
             output_tokens.append(new_token)
             prompt_embedding = torch.cat([prompt,
-                                          torch.LongTensor([new_token]).unsqueeze(1)], dim=0)
+                                          torch.LongTensor([new_token], device=prompt.device).unsqueeze(1)], dim=0)
 
         return output_tokens
