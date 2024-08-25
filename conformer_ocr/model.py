@@ -37,6 +37,7 @@ logger = logging.getLogger(__name__)
 class RecognitionModel(L.LightningModule):
     def __init__(self,
                  num_classes: int,
+                 pad_id: int,
                  sos_id: int,
                  eos_id: int,
                  batches_per_epoch: int = 0,
@@ -116,6 +117,7 @@ class RecognitionModel(L.LightningModule):
                                    subsampling_factor=subsampling_factor)
 
         decoder = TransformerDecoder(num_classes,
+                                     encoder_dim=encoder_dim,
                                      decoder_dim=decoder_dim,
                                      num_decoder_heads=num_decoder_heads,
                                      num_decoder_layers=num_decoder_layers,
@@ -145,11 +147,16 @@ class RecognitionModel(L.LightningModule):
             encoder_outputs, encoder_lens = self.nn['encoder'](input, batch['seq_lens'])
             # memory padding masks
             encoder_pad_mask = (torch.ones(encoder_outputs.size(1), encoder_outputs.size(0), device=encoder_lens.device).cumsum(dim=0) > encoder_lens).T
-            logits = self.nn['decoder'](target,
+            # shift target to the right
+            shifted_target = target.new_zeros(target.shape, device=target.device)
+            shifted_target[:, 1:] = target[:, :-1].clone()
+            shifted_target[:, 0] = self.hparams.sos_id
+
+            logits = self.nn['decoder'](shifted_target,
                                         encoder_outputs,
                                         encoder_pad_mask)  # NWC
 
-            loss = self.criterion(logits.contiguous().view(-1, logits.size(-1)), target.contiguous().view(-1))
+            loss = self.criterion(logits.transpose(1, 2), target)
             return {'loss': loss,
                     'logits': logits,
                     'output_lens': encoder_lens}

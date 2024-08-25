@@ -328,6 +328,7 @@ def train(ctx, load, batch_size, pad, line_height, output, freq, quit, epochs,
         model = RecognitionModel.load_from_checkpoint(load,
                                                       num_classes=data_module.num_classes,
                                                       map_location=torch.device('cpu'),
+                                                      pad_id=data_module.pad_id,
                                                       sos_id=data_module.sos_id,
                                                       eos_id=data_module.eos_id,
                                                       **hyper_params)
@@ -337,6 +338,7 @@ def train(ctx, load, batch_size, pad, line_height, output, freq, quit, epochs,
         model = RecognitionModel(**hyper_params,
                                  num_classes=data_module.num_classes,
                                  batches_per_epoch=len(data_module.train_dataloader()),
+                                 pad_id=data_module.pad_id,
                                  sos_id=data_module.sos_id,
                                  eos_id=data_module.eos_id)
 

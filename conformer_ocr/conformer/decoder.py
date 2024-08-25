@@ -26,6 +26,7 @@ class TransformerDecoder(nn.Module):
     """
     def __init__(self,
                  num_classes: int,
+                 encoder_dim: int = 512,
                  decoder_dim: int = 512,
                  num_decoder_heads: int = 4,
                  decoder_d_ffn: int = 1024,
@@ -43,6 +44,12 @@ class TransformerDecoder(nn.Module):
                                       embedding_dim=decoder_dim)
         self.fc = nn.Linear(decoder_dim, num_classes)
         self.positional_encoding = PositionalEncoding(decoder_dim)
+
+        if encoder_dim != decoder_dim:
+            self.emb_adapter = nn.Linear(encoder_dim, decoder_dim)
+        else:
+            self.emb_adapter = nn.Identity()
+
         self.sos_id = sos_id
         self.eos_id = eos_id
 
@@ -51,16 +58,18 @@ class TransformerDecoder(nn.Module):
         Forward propagate a `inputs` for decoder training.
 
         Args:
-            tgt: Teacher forcing target
-            memory:
-            memory_key_padding_mask:
+            tgt: Teacher forcing target NW
+            memory: NWE
+            memory_key_padding_mask: NW
 
         Returns:
-            Tensor
+            A Tensor of size NWO
         """
         tgt_embed = self.positional_encoding(self.embedding(tgt).permute(1, 0, 2))
         tgt_mask = nn.Transformer.generate_square_subsequent_mask(tgt_embed.size(0),
                                                                   tgt.device)
+        memory = self.emb_adapter(memory)
+
         decoder_out = self.decoder(tgt=tgt_embed,
                                    memory=memory.permute(1, 0, 2), # WNC
                                    tgt_mask=tgt_mask,
@@ -68,13 +77,20 @@ class TransformerDecoder(nn.Module):
         logits = self.fc(decoder_out)  # WNC
         return logits.permute(1, 0, 2)  # NWC
 
-    def predict(self,
-                memory: Tensor,
-                memory_key_padding_mask: Tensor,
-                prefix: Optional[Tensor] = None,
-                max_len: int = 1024):
+    @torch.no_grad()
+    def generate(self,
+                 memory: Tensor,
+                 memory_key_padding_mask: Tensor,
+                 prefix: Optional[Tensor] = None,
+                 max_len: int = 1024):
         """
-        Inference.
+        Generation for inference.
+
+        Args:
+            memory: NWE
+            memory_key_padding_mask: NW
+            prefix: Optional tensor of size S containing the decoded prefix.
+            max_len: maximum length of decoded output sequence
         """
         output_tokens = []
         if not prefix:

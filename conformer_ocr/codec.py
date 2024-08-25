@@ -125,7 +125,7 @@ class TransformerCodec(object):
             KrakenEncodeException: if the a subsequence is not encodable and the
                                    codec is set to strict mode.
         """
-        labels: List[int] = [self.sos]
+        labels: List[int] = []
         idx = 0
         while idx < len(s):
             encodable_suffix = False
