@@ -199,7 +199,7 @@ class TextLineDataModule(L.LightningDataModule):
     def val_dataloader(self):
         return DataLoader(self.val_set,
                           shuffle=False,
-                          batch_size=self.hparams.batch_size,
+                          batch_size=1,
                           num_workers=self.hparams.num_workers,
                           pin_memory=True,
                           collate_fn=collate_sequences,

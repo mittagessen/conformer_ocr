@@ -26,7 +26,6 @@ from lightning.pytorch.utilities.memory import (garbage_collection_cuda,
                                                 is_oom_error)
 from torch.optim import lr_scheduler
 from torchmetrics.text import CharErrorRate, WordErrorRate
-from torchmetrics.aggregation import MeanMetric
 
 from conformer_ocr.conformer.encoder import ConformerEncoder
 from conformer_ocr.conformer.decoder import TransformerDecoder
@@ -132,14 +131,13 @@ class RecognitionModel(L.LightningModule):
 
         self.val_cer = CharErrorRate()
         self.val_wer = WordErrorRate()
-        self.val_loss = MeanMetric()
 
     def forward(self, x, seq_lens=None):
         encoder_outputs, encoder_lens = self.nn['encoder'](x, seq_lens)
         encoder_pad_mask = (torch.ones(encoder_outputs.size(1), encoder_outputs.size(0)).cumsum(dim=0) > encoder_lens).T
         return self.nn['decoder'].predict(encoder_outputs, encoder_pad_mask), encoder_lens
 
-    def _step(self, batch):
+    def training_step(self, batch, batch_idx):
         try:
             input, target = batch['image'], batch['target']
             input = input.squeeze(1).transpose(1, 2)
@@ -157,9 +155,6 @@ class RecognitionModel(L.LightningModule):
                                         encoder_pad_mask)  # NWC
 
             loss = self.criterion(logits.transpose(1, 2), target)
-            return {'loss': loss,
-                    'logits': logits,
-                    'output_lens': encoder_lens}
 
         except RuntimeError as e:
             if is_oom_error(e):
@@ -168,26 +163,20 @@ class RecognitionModel(L.LightningModule):
             else:
                 raise
 
-    def training_step(self, batch, batch_idx):
-        o = self._step(batch)
-        if o is not None:
-            loss = o['loss']
-            self.log('train_loss', loss, on_step=False, on_epoch=True, prog_bar=True, logger=True)
-            return loss
+        self.log('train_loss', loss, on_step=False, on_epoch=True, prog_bar=True, logger=True)
+        return loss
 
     def validation_step(self, batch, batch_idx):
-        o = self._step(batch)
-        if o is not None:
-            y_hat = o['logits'].max(1).indices.cpu().float().numpy()
-            preds = []
-            decoded_targets = []
-            for labels in y_hat:
-                preds.append(''.join([x[0] for x in self.trainer.datamodule.val_codec.decode([(x, 0, 0, 0) for x in labels])]))
-            for target in batch['target']:
-                decoded_targets.append(''.join([x[0] for x in self.trainer.datamodule.val_codec.decode([(x, 0, 0, 0) for x in target])]))
-            self.val_cer.update(preds, decoded_targets)
-            self.val_wer.update(preds, decoded_targets)
-            self.val_loss.update(o['loss'])
+        input = batch['image'].squeeze(1).transpose(1, 2)
+        encoder_outputs, encoder_lens = self.nn['encoder'](input, batch['seq_lens'])
+        # memory padding masks
+        encoder_pad_mask = (torch.ones(encoder_outputs.size(1), encoder_outputs.size(0), device=encoder_lens.device).cumsum(dim=0) > encoder_lens).T
+        # TODO: make batching work, implement cache
+        y_hat = self.nn['decoder'].generate(encoder_outputs, encoder_pad_mask).cpu().float().numpy()[0]
+        pred = ''.join([x[0] for x in self.trainer.datamodule.val_codec.decode([(x, 0, 0, 0) for x in y_hat])])
+        decoded_target = ''.join([x[0] for x in self.trainer.datamodule.val_codec.decode([(x, 0, 0, 0) for x in batch['target'][0]])])
+        self.val_cer.update(pred, decoded_target)
+        self.val_wer.update(pred, decoded_target)
 
     def on_validation_epoch_end(self):
         accuracy = 1.0 - self.val_cer.compute()
@@ -200,13 +189,11 @@ class RecognitionModel(L.LightningModule):
         logger.info(f'validation run: total chars {self.val_cer.total} errors {self.val_cer.errors} accuracy {accuracy}')
         self.log('val_accuracy', accuracy, on_step=False, on_epoch=True, prog_bar=True, logger=True)
         self.log('val_word_accuracy', word_accuracy, on_step=False, on_epoch=True, prog_bar=True, logger=True)
-        self.log('val_loss', self.val_loss.compute(), on_step=False, on_epoch=True, prog_bar=True, logger=True)
         self.log('val_metric', accuracy, on_step=False, on_epoch=True, prog_bar=False, logger=True)
         self.log('global_step', self.global_step, on_step=False, on_epoch=True, prog_bar=False, logger=True)
 
         self.val_cer.reset()
         self.val_wer.reset()
-        self.val_loss.reset()
 
     def on_load_checkpoint(self, checkpoint: dict) -> None:
         """
