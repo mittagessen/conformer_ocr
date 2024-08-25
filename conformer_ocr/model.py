@@ -128,7 +128,7 @@ class RecognitionModel(L.LightningModule):
                                  'decoder': decoder})
 
         # loss
-        self.criterion = nn.CrossEntropyLoss()
+        self.criterion = nn.CrossEntropyLoss(ignore_index=pad_id)
 
         self.val_cer = CharErrorRate()
         self.val_wer = WordErrorRate()
