@@ -14,7 +14,6 @@
 
 import torch
 import torch.nn as nn
-from torch import Tensor
 from typing import Optional
 
 from conformer_ocr.conformer.embedding import PositionalEncoding
@@ -53,17 +52,20 @@ class TransformerDecoder(nn.Module):
         self.sos_id = sos_id
         self.eos_id = eos_id
 
-    def forward(self, tgt: Tensor, memory: Tensor, memory_key_padding_mask: Tensor) -> Tensor:
+    def forward(self,
+                tgt: torch.LongTensor,
+                memory: torch.FloatTensor,
+                memory_key_padding_mask: torch.BoolTensor) -> torch.FloatTensor:
         """
         Forward propagate a `inputs` for decoder training.
 
         Args:
-            tgt: Teacher forcing target NW
-            memory: NWE
-            memory_key_padding_mask: NW
+            tgt (`torch.LongTensor: A sequence of decoder labels with shape (N, S)
+            memory: The encoder embeddings with shape (N, W, E)
+            memory_key_padding_mask: Encoder padding mask (N, W)
 
         Returns:
-            A Tensor of size NWO
+            A Tensor of size (N, W, O)
         """
         tgt_embed = self.positional_encoding(self.embedding(tgt).permute(1, 0, 2))
         tgt_mask = nn.Transformer.generate_square_subsequent_mask(tgt_embed.size(0),
@@ -71,48 +73,46 @@ class TransformerDecoder(nn.Module):
         memory = self.emb_adapter(memory)
 
         decoder_out = self.decoder(tgt=tgt_embed,
-                                   memory=memory.permute(1, 0, 2), # WNC
+                                   memory=memory.permute(1, 0, 2),  # WNC
                                    tgt_mask=tgt_mask,
+                                   tgt_is_causal=True,
                                    memory_key_padding_mask=memory_key_padding_mask)
         logits = self.fc(decoder_out)  # WNC
         return logits.permute(1, 0, 2)  # NWC
 
     @torch.no_grad()
     def generate(self,
-                 memory: Tensor,
-                 memory_key_padding_mask: Tensor,
-                 prefix: Optional[Tensor] = None,
+                 memory: torch.FloatTensor,
+                 memory_key_padding_mask: torch.BoolTensor,
+                 prompt: Optional[torch.LongTensor] = None,
                  max_len: int = 1024):
         """
-        Generation for inference.
+        Autoregressive text generation for inference.
 
         Args:
-            memory: NWE
-            memory_key_padding_mask: NW
-            prefix: Optional tensor of size S containing the decoded prefix.
+            memory: (N, W, E)
+            memory_key_padding_mask: (N, W)
+            prompt: Tensor of size (S) containing the decoded prefix. If None
+                    the decoder initializes with the SOS token (optional)
             max_len: maximum length of decoded output sequence
         """
         output_tokens = []
-        if not prefix:
-            prefix = torch.LongTensor([self.sos_id]).unsqueeze(1)
+        if not prompt:
+            prompt = torch.LongTensor([self.sos_id]).unsqueeze(0)  # NW
 
         while len(output_tokens) < max_len:
+            prompt_embedding = self.positional_encoding(self.embedding(prompt).permute(1, 0, 2))
 
-            prefix_embedding = self.positional_encoding(self.embedding(prefix))
-
-            tgt_mask = nn.Transformer.generate_square_subsequent_mask(prefix.size(0),
-                                                                      prefix.device)
-            decoder_out = self.decoder(tgt=prefix_embedding,
-                                       memory=memory,
-                                       tgt_mask=tgt_mask,
+            decoder_out = self.decoder(tgt=prompt_embedding,
+                                       memory=memory.permute(1, 0, 2),
                                        memory_key_padding_mask=memory_key_padding_mask)
 
-            logits = self.fc(decoder_out[-1, :, :])  # 1, vocab_size
-            token = logits.argmax(1).item()
-            if token == self.eos_id:  # end of generation
+            logits = self.fc(decoder_out[-1, :, :].clone().float())  # 1, vocab_size
+            new_token = logits.argmax(-1).item()
+            if new_token == self.eos_id:  # end of generation
                 break
-            output_tokens.append(token)
-            prefix_embedding = torch.cat([prefix,
-                                          torch.LongTensor([token]).unsqueeze(1)], dim=0)
+            output_tokens.append(new_token)
+            prompt_embedding = torch.cat([prompt,
+                                          torch.LongTensor([new_token]).unsqueeze(1)], dim=0)
 
         return output_tokens
