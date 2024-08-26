@@ -143,16 +143,13 @@ class RecognitionModel(L.LightningModule):
             input = input.squeeze(1).transpose(1, 2)
 
             encoder_outputs, encoder_lens = self.nn['encoder'](input, batch['seq_lens'])
-            # memory padding masks
-            encoder_pad_mask = (torch.ones(encoder_outputs.size(1), encoder_outputs.size(0), device=encoder_lens.device).cumsum(dim=0) > encoder_lens).T
             # shift target to the right
             shifted_target = target.new_zeros(target.shape, device=target.device)
             shifted_target[:, 1:] = target[:, :-1].clone()
             shifted_target[:, 0] = self.hparams.sos_id
 
             logits = self.nn['decoder'](shifted_target,
-                                        encoder_outputs,
-                                        encoder_pad_mask)  # NWC
+                                        encoder_outputs)  # NWC
 
             loss = self.criterion(logits.transpose(1, 2), target)
 
@@ -169,10 +166,8 @@ class RecognitionModel(L.LightningModule):
     def validation_step(self, batch, batch_idx):
         input = batch['image'].squeeze(1).transpose(1, 2)
         encoder_outputs, encoder_lens = self.nn['encoder'](input, batch['seq_lens'])
-        # memory padding masks
-        encoder_pad_mask = (torch.ones(encoder_outputs.size(1), encoder_outputs.size(0), device=encoder_lens.device).cumsum(dim=0) > encoder_lens).T
         # TODO: make batching work, implement cache
-        y_hat = self.nn['decoder'].generate(encoder_outputs, encoder_pad_mask)
+        y_hat = self.nn['decoder'].generate(encoder_outputs)
         pred = ''.join([x[0] for x in self.trainer.datamodule.val_codec.decode([(x, 0, 0, 0) for x in y_hat])])
         decoded_target = ''.join([x[0] for x in self.trainer.datamodule.val_codec.decode([(x, 0, 0, 0) for x in batch['target'][0]])])
         self.val_cer.update(pred, decoded_target)
