@@ -1,41 +1,25 @@
-# MIT License
+# Copyright 2022 The OpenAI Authors and The HuggingFace Inc. team.
+# Copyright 2024 Benjamin Kiessling
 #
-# Copyright (c) 2022 OpenAI
-#               2024 Benjamin Kiessling
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
 #
-# Permission is hereby granted, free of charge, to any person obtaining a copy
-# of this software and associated documentation files (the "Software"), to deal
-# in the Software without restriction, including without limitation the rights
-# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-# copies of the Software, and to permit persons to whom the Software is
-# furnished to do so, subject to the following conditions:
+#     http://www.apache.org/licenses/LICENSE-2.0
 #
-# The above copyright notice and this permission notice shall be included in all
-# copies or substantial portions of the Software.
-#
-# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-# SOFTWARE.
-
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 import torch
-import numpy as np
 import torch.nn.functional as F
 
 from torch import Tensor, nn
-from typing import Dict, Iterable, Optional
+from typing import Iterable, Optional
 
-
-def sinusoids(length, channels, max_timescale=10000):
-    """Returns sinusoids for positional embedding"""
-    assert channels % 2 == 0
-    log_timescale_increment = np.log(max_timescale) / (channels // 2 - 1)
-    inv_timescales = torch.exp(-log_timescale_increment * torch.arange(channels // 2))
-    scaled_time = torch.arange(length)[:, np.newaxis] * inv_timescales[np.newaxis, :]
-    return torch.cat([torch.sin(scaled_time), torch.cos(scaled_time)], dim=1)
+from conformer_ocr.conformer.cache import DecoderCache, Cache
+from conformer_ocr.conformer.embedding import SinusoidalPositionalEmbedding
 
 
 class LayerNorm(nn.LayerNorm):
@@ -61,84 +45,104 @@ class Conv1d(nn.Conv1d):
 
 
 class MultiHeadAttention(nn.Module):
-    def __init__(self, decoder_dim: int, n_head: int):
+    """Multi-headed attention from 'Attention Is All You Need' paper"""
+
+    def __init__(self,
+                 embed_dim: int,
+                 num_heads: int,
+                 is_causal: bool = False):
         super().__init__()
-        self.n_head = n_head
-        self.query = Linear(decoder_dim, decoder_dim)
-        self.key = Linear(decoder_dim, decoder_dim, bias=False)
-        self.value = Linear(decoder_dim, decoder_dim)
-        self.out = Linear(decoder_dim, decoder_dim)
+        self.embed_dim = embed_dim
+        self.num_heads = num_heads
+        self.head_dim = embed_dim // num_heads
+
+        self.scaling = self.head_dim**-0.5
+        self.is_causal = is_causal
+
+        self.k_proj = nn.Linear(embed_dim, embed_dim, bias=False)
+        self.v_proj = nn.Linear(embed_dim, embed_dim, bias=False)
+        self.q_proj = nn.Linear(embed_dim, embed_dim, bias=False)
+        self.out_proj = nn.Linear(embed_dim, embed_dim, bias=False)
+
+    def _shape(self, tensor: torch.Tensor, seq_len: int, bsz: int):
+        return tensor.view(bsz, seq_len, self.num_heads, self.head_dim).transpose(1, 2).contiguous()
 
     def forward(self,
-                x: Tensor,
-                xa: Optional[Tensor] = None,
-                mask: Optional[Tensor] = None,
-                kv_cache: Optional[dict] = None,):
-        q = self.query(x)
+                hidden_states: torch.Tensor,
+                key_value_states: Optional[torch.Tensor] = None,
+                past_key_value: Optional[DecoderCache] = None) -> torch.Tensor:
+        """Input shape: Batch x Time x Channel"""
 
-        if kv_cache is None or xa is None or self.key not in kv_cache:
-            # hooks, if installed (i.e. kv_cache is not None), will prepend the cached kv tensors;
-            # otherwise, perform key/value projections for self- or cross-attention as usual.
-            k = self.key(x if xa is None else xa)
-            v = self.value(x if xa is None else xa)
+        # if key_value_states are provided this layer is used as a cross-attention layer
+        # for the decoder
+        is_cross_attention = key_value_states is not None
+        bsz, tgt_len, _ = hidden_states.size()
+
+        # get query proj
+        query_states = self._shape(self.q_proj(hidden_states), tgt_len, bsz)
+
+        if past_key_value is not None:
+            if is_cross_attention:
+                # after the first generated id, we can subsequently re-use all key/value_states from cache
+                past_key_value = past_key_value.cross_attention_cache
+            else:
+                past_key_value = past_key_value.self_attention_cache
+
+        # use key_value_states if cross attention
+        current_states = key_value_states if key_value_states is not None else hidden_states
+        if is_cross_attention and past_key_value and self in past_key_value.key_cache:
+            # reuse k,v, cross_attentions
+            key_states = past_key_value.key_cache[self]
+            value_states = past_key_value.value_cache[self]
         else:
-            # for cross-attention, calculate keys and values once and reuse in subsequent calls.
-            k = kv_cache[self.key]
-            v = kv_cache[self.value]
+            key_states = self._shape(self.k_proj(current_states), -1, bsz)
+            value_states = self._shape(self.v_proj(current_states), -1, bsz)
+            if past_key_value is not None:
+                # save all key/value_states to cache to be re-used for fast auto-regressive generation
+                key_states, value_states = past_key_value.update(key_states,
+                                                                 value_states,
+                                                                 self)
 
-        wv, qk = self.qkv_attention(q, k, v, mask)
-        return self.out(wv), qk
+        attn_output = torch.nn.functional.scaled_dot_product_attention(query_states,
+                                                                       key_states,
+                                                                       value_states,
+                                                                       attn_mask=None,
+                                                                       dropout_p=0.0,
+                                                                       is_causal=self.is_causal)
 
-    def qkv_attention(self,
-                      q: Tensor,
-                      k: Tensor,
-                      v: Tensor,
-                      mask: Optional[Tensor] = None):
+        attn_output = attn_output.transpose(1, 2)
+        attn_output = attn_output.reshape(bsz, tgt_len, self.embed_dim)
 
-        n_batch, n_ctx, decoder_dim = q.shape
-        scale = (decoder_dim // self.n_head) ** -0.25
-        q = q.view(*q.shape[:2], self.n_head, -1).permute(0, 2, 1, 3) * scale
-        k = k.view(*k.shape[:2], self.n_head, -1).permute(0, 2, 3, 1) * scale
-        v = v.view(*v.shape[:2], self.n_head, -1).permute(0, 2, 1, 3)
+        attn_output = self.out_proj(attn_output)
 
-        qk = q @ k
-        if mask is not None:
-            qk = qk + mask[:n_ctx, :n_ctx]
-        qk = qk.float()
-
-        w = F.softmax(qk, dim=-1).to(q.dtype)
-        return (w @ v).permute(0, 2, 1, 3).flatten(start_dim=2), qk.detach()
+        return attn_output
 
 
-class ResidualAttentionBlock(nn.Module):
+class DecoderLayer(nn.Module):
     def __init__(self,
                  decoder_dim: int,
-                 n_head: int,
-                 cross_attention: bool = False):
+                 num_decoder_heads: int):
         super().__init__()
 
-        self.attn = MultiHeadAttention(decoder_dim, n_head)
+        self.attn = MultiHeadAttention(decoder_dim, num_decoder_heads, is_causal=True)
         self.attn_ln = LayerNorm(decoder_dim)
 
-        self.cross_attn = (
-            MultiHeadAttention(decoder_dim, n_head) if cross_attention else None
-        )
-        self.cross_attn_ln = LayerNorm(decoder_dim) if cross_attention else None
+        self.cross_attn = MultiHeadAttention(decoder_dim, num_decoder_heads)
+        self.cross_attn_ln = LayerNorm(decoder_dim)
 
         n_mlp = decoder_dim * 4
-        self.mlp = nn.Sequential(
-            Linear(decoder_dim, n_mlp), nn.GELU(), Linear(n_mlp, decoder_dim)
-        )
+        self.mlp = nn.Sequential(Linear(decoder_dim, n_mlp),
+                                 nn.GELU(),
+                                 Linear(n_mlp, decoder_dim))
         self.mlp_ln = LayerNorm(decoder_dim)
 
     def forward(self,
                 x: Tensor,
                 xa: Optional[Tensor] = None,
-                mask: Optional[Tensor] = None,
-                kv_cache: Optional[dict] = None):
-        x = x + self.attn(self.attn_ln(x), mask=mask, kv_cache=kv_cache)[0]
+                past_key_value: Optional[DecoderCache] = None):
+        x = x + self.attn(self.attn_ln(x), past_key_value=past_key_value)
         if self.cross_attn:
-            x = x + self.cross_attn(self.cross_attn_ln(x), xa, kv_cache=kv_cache)[0]
+            x = x + self.cross_attn(self.cross_attn_ln(x), xa, past_key_value=past_key_value)
         x = x + self.mlp(self.mlp_ln(x))
         return x
 
@@ -162,11 +166,12 @@ class TransformerDecoder(nn.Module):
 
         self.token_embedding = nn.Embedding(num_embeddings=num_classes,
                                             embedding_dim=decoder_dim)
-        self.register_buffer('positional_embedding', sinusoids(1024, decoder_dim))
-        self.blocks: Iterable[ResidualAttentionBlock] = nn.ModuleList(
+
+        self.pos_embedding = SinusoidalPositionalEmbedding(5000, decoder_dim)
+
+        self.blocks: Iterable[DecoderLayer] = nn.ModuleList(
             [
-                ResidualAttentionBlock(decoder_dim, num_decoder_heads, cross_attention=True)
-                for _ in range(num_decoder_layers)
+                DecoderLayer(decoder_dim, num_decoder_heads) for _ in range(num_decoder_layers)
             ]
         )
         self.ln = LayerNorm(decoder_dim)
@@ -177,37 +182,33 @@ class TransformerDecoder(nn.Module):
 
         self.max_output_len = max_output_len
 
-        self.kv_cache = {}
-        self.hooks = []
-
     def forward(self,
                 tgt: Tensor,
                 memory: Tensor,
-                kv_cache: Optional[dict] = None):
+                past_key_value: Optional[DecoderCache] = None):
         """
         tgt (`torch.LongTensor: A sequence of decoder labels with shape (N, S)
         memory: The encoder embeddings with shape (N, W, E)
-        kv_cache: Dict
         """
-        offset = next(iter(kv_cache.values())).shape[1] if kv_cache else 0
+        past_key_value_length = past_key_value.self_attention_cache.get_seq_length() if past_key_value is not None else 0
 
-        tgt_mask = nn.Transformer.generate_square_subsequent_mask(tgt.size(1),
-                                                                  tgt.device)
+        x = self.token_embedding(tgt)
+        x = x + self.pos_embedding(tgt.size(), past_key_value_length).to(x.device)
 
-        x = self.token_embedding(tgt) + self.positional_embedding[offset:offset+tgt.shape[-1]]
         x = x.to(memory.dtype)
 
         memory = self.emb_adapter(memory)
 
         for block in self.blocks:
-            x = block(x, memory, mask=tgt_mask, kv_cache=kv_cache)
+            x = block(x, memory, past_key_value=past_key_value)
 
         return self.fc(x)
 
     @torch.no_grad()
     def generate(self,
                  memory: torch.FloatTensor,
-                 prompt: Optional[torch.LongTensor] = None):
+                 prompt: Optional[torch.LongTensor] = None,
+                 use_cache: bool = True):
         """
         Autoregressive text generation for inference. Only works with
         batch_size == 1 for now.
@@ -216,10 +217,12 @@ class TransformerDecoder(nn.Module):
             memory: (N, W, E)
             prompt: Tensor of size (S) containing the decoded prefix. If None
                     the decoder initializes with the SOS token (optional)
-            max_len: maximum length of decoded output sequence
+            use_cache: Enables/disables caching
         """
-        if not self.kv_cache:
-            self.kv_cache, self.hooks = self.install_kv_cache_hooks()
+        if use_cache:
+            past_key_value = DecoderCache(Cache(), Cache())
+        else:
+            past_key_value = None
 
         output_tokens = []
         if prompt is None:
@@ -228,55 +231,15 @@ class TransformerDecoder(nn.Module):
         while len(output_tokens) < self.max_output_len:
             logits = self.forward(tgt=prompt,
                                   memory=memory,
-                                  kv_cache=self.kv_cache)
-
-            logits = logits[-1, :, :].clone().float()  # 1, vocab_size
+                                  past_key_value=past_key_value)
+            logits = logits[:, -1, :].clone().float()  # 1, vocab_size
             new_token = logits.argmax(-1).item()
             if new_token == self.eos_id:  # end of generation
                 break
             output_tokens.append(new_token)
-            # only run last token after first forward pass
-            prompt = torch.tensor([[new_token]], dtype=torch.long, device=memory.device)  # NW
-
-        self.cleanup_caches()
-        return output_tokens
-
-    def cleanup_caches(self):
-        for hook in self.hooks:
-            hook.remove()
-
-        self.kv_cache = {}
-        self.hooks = []
-
-    def install_kv_cache_hooks(self, cache: Optional[Dict] = None):
-        """
-        The `MultiHeadAttention` module optionally accepts `kv_cache` which stores the key and value
-        tensors calculated for the previous positions. This method returns a dictionary that stores
-        all caches, and the necessary hooks for the key and value projection modules that save the
-        intermediate tensors to be reused during later calculations.
-
-        Args:
-            cache: Optional dict to populate the cache.
-
-        Returns:
-            cache: A dictionary object mapping the key/value projection modules to its cache
-            hooks: List of PyTorch RemovableHandle objects to stop the hooks to be called
-        """
-        cache = {**cache} if cache is not None else {}
-        hooks = []
-
-        def save_to_cache(module, _, output):
-            if module not in cache:
-                # save as-is, for the first token or cross attention
-                cache[module] = output
+            if use_cache:
+                # only run last token after first forward pass
+                prompt = torch.tensor([[new_token]], dtype=torch.long, device=memory.device)  # NW
             else:
-                cache[module] = torch.cat([cache[module], output], dim=1).detach()
-            return cache[module]
-
-        def install_hooks(layer: nn.Module):
-            if isinstance(layer, MultiHeadAttention):
-                hooks.append(layer.key.register_forward_hook(save_to_cache))
-                hooks.append(layer.value.register_forward_hook(save_to_cache))
-
-        self.apply(install_hooks)
-        return cache, hooks
+                prompt = torch.cat([prompt, torch.tensor([[new_token]], dtype=torch.long, device=memory.device)], dim=1)
+        return output_tokens
