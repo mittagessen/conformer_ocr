@@ -121,7 +121,7 @@ class TextLineDataModule(L.LightningDataModule):
         else:
             raise ValueError(f'format_type {format_type} not in [alto, page, xml, binary].')
 
-        self.transforms = ImageInputTransforms(1, height, 0, 1, (pad, 0), valid_norm=False)
+        self.transforms = ImageInputTransforms(1, height, 0, 3, (pad, 0), valid_norm=False)
 
         if evaluation_data:
             train_set = self._build_dataset(DatasetClass, training_data)

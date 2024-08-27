@@ -27,13 +27,24 @@ from lightning.pytorch.utilities.memory import (garbage_collection_cuda,
 from torch.optim import lr_scheduler
 from torchmetrics.text import CharErrorRate, WordErrorRate
 
-from conformer_ocr.conformer.encoder import ConformerEncoder
+from transformers import Swinv2Model
 from conformer_ocr.conformer.decoder import TransformerDecoder
 
 logger = logging.getLogger(__name__)
 
 
 class RecognitionModel(L.LightningModule):
+    """
+    A LightningModule encapsulating the training setup for a text
+    recognition model.
+
+    Setup parameters (load, training_data, evaluation_data, ....) are
+    named, model hyperparameters (everything in
+    `kraken.lib.default_specs.SEGMENTATION_HYPER_PARAMS`) are in in the
+    `hyper_params` argument.
+
+    Args:
+    """
     def __init__(self,
                  num_classes: int,
                  pad_id: int,
@@ -57,34 +68,10 @@ class RecognitionModel(L.LightningModule):
                  cos_min_lr=1e-4,
                  warmup=15000,
                  height=96,
-                 encoder_dim=512,
                  decoder_dim=512,
-                 num_encoder_layers=18,
-                 num_attention_heads=8,
                  num_decoder_layers=4,
                  num_decoder_heads=8,
-                 feed_forward_expansion_factor=4,
-                 conv_expansion_factor=2,
-                 input_dropout_p=0.1,
-                 feed_forward_dropout_p=0.1,
-                 attention_dropout_p=0.1,
-                 conv_dropout_p=0.1,
-                 conv_kernel_size=9,
-                 half_step_residual=True,
-                 subsampling_conv_channels=256,
-                 subsampling_factor=4,
                  **kwargs):
-        """
-        A LightningModule encapsulating the training setup for a text
-        recognition model.
-
-        Setup parameters (load, training_data, evaluation_data, ....) are
-        named, model hyperparameters (everything in
-        `kraken.lib.default_specs.SEGMENTATION_HYPER_PARAMS`) are in in the
-        `hyper_params` argument.
-
-        Args:
-        """
         super().__init__()
 
         self.best_epoch = -1
@@ -99,24 +86,25 @@ class RecognitionModel(L.LightningModule):
             torch.multiprocessing.set_sharing_strategy('file_system')
 
         logger.info(f'Creating conformer model with {num_classes} outputs')
-        encoder = ConformerEncoder(in_channels=1,
-                                   input_dim=height,
-                                   encoder_dim=encoder_dim,
-                                   num_layers=num_encoder_layers,
-                                   num_attention_heads=num_attention_heads,
-                                   feed_forward_expansion_factor=feed_forward_expansion_factor,
-                                   conv_expansion_factor=conv_expansion_factor,
-                                   input_dropout_p=input_dropout_p,
-                                   feed_forward_dropout_p=feed_forward_dropout_p,
-                                   attention_dropout_p=attention_dropout_p,
-                                   conv_dropout_p=conv_dropout_p,
-                                   conv_kernel_size=conv_kernel_size,
-                                   half_step_residual=half_step_residual,
-                                   subsampling_conv_channels=subsampling_conv_channels,
-                                   subsampling_factor=subsampling_factor)
+        #encoder = ConformerEncoder(in_channels=1,
+        #                           input_dim=height,
+        #                           encoder_dim=encoder_dim,
+        #                           num_layers=num_encoder_layers,
+        #                           num_attention_heads=num_attention_heads,
+        #                           feed_forward_expansion_factor=feed_forward_expansion_factor,
+        #                           conv_expansion_factor=conv_expansion_factor,
+        #                           input_dropout_p=input_dropout_p,
+        #                           feed_forward_dropout_p=feed_forward_dropout_p,
+        #                           attention_dropout_p=attention_dropout_p,
+        #                           conv_dropout_p=conv_dropout_p,
+        #                           conv_kernel_size=conv_kernel_size,
+        #                           half_step_residual=half_step_residual,
+        #                           subsampling_conv_channels=subsampling_conv_channels,
+        #                           subsampling_factor=subsampling_factor)
+        encoder = Swinv2Model.from_pretrained("microsoft/swinv2-tiny-patch4-window8-256")
 
         decoder = TransformerDecoder(num_classes,
-                                     encoder_dim=encoder_dim,
+                                     encoder_dim=encoder.config.hidden_size,
                                      decoder_dim=decoder_dim,
                                      num_decoder_heads=num_decoder_heads,
                                      num_decoder_layers=num_decoder_layers,
@@ -133,16 +121,14 @@ class RecognitionModel(L.LightningModule):
         self.val_wer = WordErrorRate()
 
     def forward(self, x, seq_lens=None):
-        encoder_outputs, encoder_lens = self.nn['encoder'](x, seq_lens)
-        encoder_pad_mask = (torch.ones(encoder_outputs.size(1), encoder_outputs.size(0)).cumsum(dim=0) > encoder_lens).T
-        return self.nn['decoder'].predict(encoder_outputs, encoder_pad_mask), encoder_lens
+        encoder_outputs = self.nn['encoder'](x).last_hidden_state
+        return self.nn['decoder'].predict(encoder_outputs)
 
     def training_step(self, batch, batch_idx):
         try:
-            input, target = batch['image'], batch['target']
-            input = input.squeeze(1).transpose(1, 2)
+            target = batch['target']
 
-            encoder_outputs, encoder_lens = self.nn['encoder'](input, batch['seq_lens'])
+            encoder_outputs = self.nn['encoder'](batch['image']).last_hidden_state
             # shift target to the right
             shifted_target = target.new_zeros(target.shape, device=target.device)
             shifted_target[:, 1:] = target[:, :-1].clone()
@@ -164,8 +150,7 @@ class RecognitionModel(L.LightningModule):
         return loss
 
     def validation_step(self, batch, batch_idx):
-        input = batch['image'].squeeze(1).transpose(1, 2)
-        encoder_outputs, encoder_lens = self.nn['encoder'](input, batch['seq_lens'])
+        encoder_outputs = self.nn['encoder'](batch['image']).last_hidden_state
         # TODO: make batching work, implement cache
         y_hat = self.nn['decoder'].generate(encoder_outputs)
         pred = ''.join([x[0] for x in self.trainer.datamodule.val_codec.decode([(x, 0, 0, 0) for x in y_hat])])
