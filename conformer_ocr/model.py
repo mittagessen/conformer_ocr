@@ -121,14 +121,14 @@ class RecognitionModel(L.LightningModule):
         self.val_wer = WordErrorRate()
 
     def forward(self, x, seq_lens=None):
-        encoder_outputs = self.nn['encoder'](x).last_hidden_state
+        encoder_outputs = self.nn['encoder'](x, interpolate_pos_encoding=True).last_hidden_state
         return self.nn['decoder'].predict(encoder_outputs)
 
     def training_step(self, batch, batch_idx):
         try:
             target = batch['target']
 
-            encoder_outputs = self.nn['encoder'](batch['image']).last_hidden_state
+            encoder_outputs = self.nn['encoder'](batch['image'], interpolate_pos_encoding=True).last_hidden_state
             # shift target to the right
             shifted_target = target.new_zeros(target.shape, device=target.device)
             shifted_target[:, 1:] = target[:, :-1].clone()
@@ -150,7 +150,7 @@ class RecognitionModel(L.LightningModule):
         return loss
 
     def validation_step(self, batch, batch_idx):
-        encoder_outputs = self.nn['encoder'](batch['image']).last_hidden_state
+        encoder_outputs = self.nn['encoder'](batch['image'], interpolate_pos_encoding=True).last_hidden_state
         # TODO: make batching work, implement cache
         y_hat = self.nn['decoder'].generate(encoder_outputs)
         pred = ''.join([x[0] for x in self.trainer.datamodule.val_codec.decode([(x, 0, 0, 0) for x in y_hat])])
