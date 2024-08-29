@@ -209,13 +209,10 @@ def avg_ckpts(ctx, output, num_checkpoints, input):
               help='File(s) with paths to evaluation data. Overrides the `-p` parameter')
 @click.option('--workers', show_default=True, default=1, type=click.IntRange(1), help='Number of worker processes.')
 @click.option('--threads', show_default=True, default=1, type=click.IntRange(1), help='Maximum size of OpenMP/BLAS thread pool.')
-@click.option('-f', '--format-type', type=click.Choice(['path', 'xml', 'alto', 'page', 'binary']), default='path',
+@click.option('-f', '--format-type', type=click.Choice(['xml', 'alto', 'page']), default='xml',
               help='Sets the training data format. In ALTO and PageXML mode all '
               'data is extracted from xml files containing both line definitions and a '
-              'link to source images. In `path` mode arguments are image files '
-              'sharing a prefix up to the last extension with `.gt.txt` text files '
-              'containing the transcription. In binary mode files are datasets '
-              'files containing pre-extracted text lines.')
+              'link to source images.')
 @click.option('--augment/--no-augment',
               show_default=True,
               default=RECOGNITION_HYPER_PARAMS['augment'],

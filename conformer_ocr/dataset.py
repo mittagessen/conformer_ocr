@@ -15,34 +15,41 @@
 """
 Utility functions for data loading and training of VGSL networks.
 """
-import io
-import json
 import torch
 import torch.nn.functional as F
 import numpy as np
-import pyarrow as pa
 import traceback
+import dataclasses
 import lightning.pytorch as L
+import multiprocessing as mp
 
 from typing import (TYPE_CHECKING, Any, Callable, List, Literal, Optional,
                     Tuple, Union, Sequence)
 
 from torch.utils.data import DataLoader, Subset, random_split
 
-from kraken.lib.xml import XMLPage
-from kraken.lib.dataset import ImageInputTransforms
-from kraken.lib.dataset.recognition import DefaultAugmenter
-
 from conformer_ocr.codec import TransformerCodec
 
 from collections import Counter
 from functools import partial
-from PIL import Image
 from torchvision import transforms
 from torch.utils.data import Dataset
 
+from PIL import Image
+
+from ctypes import c_char
+
+from scipy.special import comb
+from shapely.geometry import LineString, Polygon
+
+from shapely.ops import clip_by_rect
+
+from kraken.containers import Segmentation, BaselineLine
 from kraken.lib import functional_im_transforms as F_t
-from kraken.lib.exceptions import KrakenEncodeException, KrakenInputException
+from kraken.lib.xml import XMLPage
+from kraken.lib.util import is_bitonal
+from kraken.lib.dataset import ImageInputTransforms
+from kraken.lib.dataset.recognition import DefaultAugmenter
 
 if TYPE_CHECKING:
     from os import PathLike
@@ -92,7 +99,7 @@ class TextLineDataModule(L.LightningDataModule):
                  num_workers: int = 8,
                  partition: Optional[float] = 0.95,
                  codec: Optional[TransformerCodec] = None,
-                 format_type: Literal['alto', 'page', 'xml', 'binary'] = 'xml',
+                 format_type: Literal['alto', 'page', 'xml'] = 'xml',
                  binary_dataset_split: bool = False,
                  reorder: Union[bool, str] = True,
                  normalize_whitespace: bool = True,
@@ -111,13 +118,6 @@ class TextLineDataModule(L.LightningDataModule):
             if binary_dataset_split:
                 logger.warning('Internal binary dataset splits are enabled but using non-binary dataset files. Will be ignored.')
                 binary_dataset_split = False
-        elif format_type == 'binary':
-            DatasetClass = ArrowIPCRecognitionDataset
-            logger.info(f'Got {len(training_data)} binary dataset files for training data')
-            training_data = [{'file': file} for file in training_data]
-            if evaluation_data:
-                logger.info(f'Got {len(evaluation_data)} binary dataset files for validation data')
-                evaluation_data = [{'file': file} for file in evaluation_data]
         else:
             raise ValueError(f'format_type {format_type} not in [alto, page, xml, binary].')
 
@@ -214,10 +214,20 @@ class TextLineDataModule(L.LightningDataModule):
         self.codec = TransformerCodec(state_dict['codec'])
 
 
-class ArrowIPCRecognitionDataset(Dataset):
+class PolygonGTDataset(Dataset):
     """
-    Dataset for training a recognition model from a precompiled dataset in
-    Arrow IPC format.
+    Dataset for training a line recognition model from polygonal/baseline data.
+
+    Args:
+        normalization: Unicode normalization for gt
+        whitespace_normalization: Normalizes unicode whitespace and strips
+                                  whitespace.
+        skip_empty_lines: Whether to return samples without text.
+        reorder: Whether to rearrange code points in "display"/LTR order.
+                 Set to L|R to change the default text direction.
+        im_transforms: Function taking an PIL.Image and returning a tensor
+                       suitable for forward passes.
+        augmentation: Enables augmentation.
     """
     def __init__(self,
                  normalization: Optional[str] = None,
@@ -225,40 +235,17 @@ class ArrowIPCRecognitionDataset(Dataset):
                  skip_empty_lines: bool = True,
                  reorder: Union[bool, Literal['L', 'R']] = True,
                  im_transforms: Callable[[Any], torch.Tensor] = transforms.Compose([]),
-                 augmentation: bool = False,
-                 split_filter: Optional[str] = None) -> None:
-        """
-        Creates a dataset for a polygonal (baseline) transcription model.
-
-        Args:
-            normalization: Unicode normalization for gt
-            whitespace_normalization: Normalizes unicode whitespace and strips
-                                      whitespace.
-            skip_empty_lines: Whether to return samples without text.
-            reorder: Whether to rearrange code points in "display"/LTR order.
-                     Set to L|R to change the default text direction.
-            im_transforms: Function taking an PIL.Image and returning a tensor
-                           suitable for forward passes.
-            augmentation: Enables augmentation.
-            split_filter: Enables filtering of the dataset according to mask
-                          values in the set split. If set to `None` all rows
-                          are sampled, if set to `train`, `validation`, or
-                          `test` only rows with the appropriate flag set in the
-                          file will be considered.
-        """
+                 augmentation: bool = False) -> None:
+        self._images: Union[List[Image.Image], List[torch.Tensor]] = []
+        self._gt: List[str] = []
         self.alphabet: Counter = Counter()
         self.text_transforms: List[Callable[[str], str]] = []
-        self.failed_samples = set()
         self.transforms = im_transforms
         self.aug = None
-        self._split_filter = split_filter
-        self._num_lines = 0
-        self.arrow_table = None
-        self.codec = None
         self.skip_empty_lines = skip_empty_lines
-        self.legacy_polygons_status = None
+        self.failed_samples = set()
 
-        self.seg_type = None
+        self.seg_type = 'baselines'
         # built text transformations
         if normalization:
             self.text_transforms.append(partial(F_t.text_normalize, normalization=normalization))
@@ -272,145 +259,177 @@ class ArrowIPCRecognitionDataset(Dataset):
         if augmentation:
             self.aug = DefaultAugmenter()
 
-        self.im_mode = self.transforms.mode
+        self._im_mode = mp.Value(c_char, b'1')
 
-    def add(self, file: Union[str, 'PathLike']) -> None:
+    def add(self,
+            line: Optional[BaselineLine] = None,
+            page: Optional[Segmentation] = None):
         """
-        Adds an Arrow IPC file to the dataset.
+        Adds an individual line or all lines on a page to the dataset.
 
         Args:
-            file: Location of the precompiled dataset file.
+            line: BaselineLine container object of a line.
+            page: Segmentation container object for a page.
         """
-        # extract metadata and update alphabet
-        with pa.memory_map(file, 'rb') as source:
-            ds_table = pa.ipc.open_file(source).read_all()
-            raw_metadata = ds_table.schema.metadata
-            if not raw_metadata or b'lines' not in raw_metadata:
-                raise ValueError(f'{file} does not contain a valid metadata record.')
-            metadata = json.loads(raw_metadata[b'lines'])
-        if metadata['type'] == 'kraken_recognition_baseline':
-            if not self.seg_type:
-                self.seg_type = 'baselines'
-            if self.seg_type != 'baselines':
-                raise ValueError(f'File {file} has incompatible type {metadata["type"]} for dataset with type {self.seg_type}.')
-        elif metadata['type'] == 'kraken_recognition_bbox':
-            if not self.seg_type:
-                self.seg_type = 'bbox'
-            if self.seg_type != 'bbox':
-                raise ValueError(f'File {file} has incompatible type {metadata["type"]} for dataset with type {self.seg_type}.')
-        else:
-            raise ValueError(f'Unknown type {metadata["type"]} of dataset.')
-        if self._split_filter and metadata['counts'][self._split_filter] == 0:
-            logger.warning(f'No explicit split for "{self._split_filter}" in dataset {file} (with splits {metadata["counts"].items()}).')
-            return
-        if metadata['im_mode'] > self.im_mode and self.transforms.mode >= metadata['im_mode']:
-            logger.info(f'Upgrading "im_mode" from {self.im_mode} to {metadata["im_mode"]}.')
-            self.im_mode = metadata['im_mode']
-        # centerline normalize raw bbox dataset
-        if self.seg_type == 'bbox' and metadata['image_type'] == 'raw':
-            self.transforms.valid_norm = True
+        if line:
+            self.add_line(line)
+        if page:
+            self.add_page(page)
+        if not (line or page):
+            raise ValueError('Neither line nor page data provided in dataset builder')
 
-        legacy_polygons = metadata.get('legacy_polygons', True)
-        if self.legacy_polygons_status is None:
-            self.legacy_polygons_status = legacy_polygons
-        elif self.legacy_polygons_status != legacy_polygons:
-            self.legacy_polygons_status = "mixed"
-
-        self.alphabet.update(metadata['alphabet'])
-        num_lines = metadata['counts'][self._split_filter] if self._split_filter else metadata['counts']['all']
-        if self._split_filter:
-            ds_table = ds_table.filter(ds_table.column(self._split_filter))
-        if self.skip_empty_lines:
-            logger.debug('Getting indices of empty lines after text transformation.')
-            self.skip_empty_lines = False
-            mask = np.ones(len(ds_table), dtype=bool)
-            for index in range(len(ds_table)):
-                try:
-                    self._apply_text_transform(ds_table.column('lines')[index].as_py(),)
-                except KrakenInputException:
-                    mask[index] = False
-                    continue
-            num_lines = np.count_nonzero(mask)
-            logger.debug(f'Filtering out {np.count_nonzero(~mask)} empty lines')
-            if np.any(~mask):
-                ds_table = ds_table.filter(pa.array(mask))
-            self.skip_empty_lines = True
-        if not self.arrow_table:
-            self.arrow_table = ds_table
-        else:
-            self.arrow_table = pa.concat_tables([self.arrow_table, ds_table])
-        self._num_lines += num_lines
-
-    def rebuild_alphabet(self):
+    def add_page(self, page: Segmentation):
         """
-        Recomputes the alphabet depending on the given text transformation.
+        Adds all lines on a page to the dataset.
+
+        Invalid lines will be skipped and a warning will be printed.
+
+        Args:
+
+            page: Segmentation container object for a page.
         """
-        self.alphabet = Counter()
-        for index in range(len(self)):
+        if page.type != 'baselines':
+            raise ValueError(f'Invalid segmentation of type {page.type} (expected "baselines")')
+        for line in page.lines:
             try:
-                text = self._apply_text_transform(self.arrow_table.column('lines')[index].as_py(),)
-                self.alphabet.update(text)
-            except KrakenInputException:
-                continue
+                self.add_line(dataclasses.replace(line, imagename=page.imagename))
+            except ValueError as e:
+                logger.warning(e)
 
-    def _apply_text_transform(self, sample) -> str:
+    def add_line(self, line: BaselineLine):
         """
-        Applies text transform to a sample.
+        Adds a line to the dataset.
+
+        Args:
+            line: BaselineLine container object for a line.
+
+        Raises:
+            ValueError if the transcription of the line is empty after
+            transformation or either baseline or bounding polygon are missing.
         """
-        text = sample['text']
+        if line.type != 'baselines':
+            raise ValueError(f'Invalid line of type {line.type} (expected "baselines")')
+
+        text = line.text
         for func in self.text_transforms:
             text = func(text)
-        if not text:
-            logger.debug(f'Text line "{sample["text"]}" is empty after transformations')
-            if not self.skip_empty_lines:
-                raise KrakenInputException('empty text line')
-        return text
+        if not text and self.skip_empty_lines:
+            raise ValueError(f'Text line "{line.text}" is empty after transformations')
+        if not line.baseline:
+            raise ValueError('No baseline given for line')
+        if not line.boundary:
+            raise ValueError('No boundary given for line')
+
+        self._images.append((line.imagename, line.baseline, line.boundary))
+        self._gt.append(text)
+        self.alphabet.update(text)
 
     def encode(self, codec: Optional[TransformerCodec] = None) -> None:
         """
-        Adds a codec to the dataset.
+        Adds a codec to the dataset and encodes all text lines.
+
+        Has to be run before sampling from the dataset.
         """
         if codec:
             self.codec = codec
-            logger.info(f'Trying to encode dataset with codec {codec}')
-            for index in range(self._num_lines):
-                try:
-                    text = self._apply_text_transform(
-                        self.arrow_table.column('lines')[index].as_py(),
-                    )
-                    self.codec.encode(text)
-                except KrakenEncodeException as e:
-                    raise e
-                except KrakenInputException:
-                    pass
         else:
             self.codec = TransformerCodec(''.join(self.alphabet.keys()))
+        self.training_set: List[Tuple[Union[Image.Image, torch.Tensor], torch.Tensor]] = []
+        for im, gt in zip(self._images, self._gt):
+            self.training_set.append((im, self.codec.encode(gt)))
 
     def no_encode(self) -> None:
         """
         Creates an unencoded dataset.
         """
-        pass
+        self.training_set: List[Tuple[Union[Image.Image, torch.Tensor], str]] = []
+        for im, gt in zip(self._images, self._gt):
+            self.training_set.append((im, gt))
 
     def __getitem__(self, index: int) -> Tuple[torch.Tensor, torch.Tensor]:
+        item = self.training_set[index]
         try:
-            sample = self.arrow_table.column('lines')[index].as_py()
-            logger.debug(f'Loading sample {index}')
-            im = Image.open(io.BytesIO(sample['im']))
+            logger.debug(f'Attempting to load {item[0]}')
+            im = item[0][0]
+            if not isinstance(im, Image.Image):
+                im = Image.open(im)
+            im, curve = convert_line(im, baseline=item[0][1], boundary=item[0][2])
             im = self.transforms(im)
+            if im.shape[0] == 3:
+                im_mode = b'R'
+            elif im.shape[0] == 1:
+                im_mode = b'L'
+            if is_bitonal(im):
+                im_mode = b'1'
+
+            with self._im_mode.get_lock():
+                if im_mode > self._im_mode.value:
+                    logger.info(f'Upgrading "im_mode" from {self._im_mode.value} to {im_mode}')
+                    self._im_mode.value = im_mode
             if self.aug:
                 im = im.permute((1, 2, 0)).numpy()
                 o = self.aug(image=im)
                 im = torch.tensor(o['image'].transpose(2, 0, 1))
-            text = self._apply_text_transform(sample)
+            return {'image': im, 'curve': torch.from_numpy(curve), 'target': item[1]}
         except Exception:
             self.failed_samples.add(index)
-            idx = np.random.randint(0, len(self))
+            idx = np.random.randint(0, len(self.training_set))
             logger.debug(traceback.format_exc())
             logger.info(f'Failed. Replacing with sample {idx}')
             return self[idx]
 
-        return {'image': im, 'target': self.codec.encode(text) if self.codec is not None else text}
-
     def __len__(self) -> int:
-        return self._num_lines
+        return len(self._images)
+
+    @property
+    def im_mode(self):
+        return {b'1': '1',
+                b'L': 'L',
+                b'R': 'RGB'}[self._im_mode.value]
+
+
+# magic lsq cubic bezier fit function from the internet.
+def Mtk(n, t, k):
+    return t**k * (1-t)**(n-k) * comb(n, k)
+
+
+def BezierCoeff(ts):
+    return [[Mtk(3, t, k) for k in range(4)] for t in ts]
+
+
+def bezier_fit(bl):
+    x = bl[:, 0]
+    y = bl[:, 1]
+    dy = y[1:] - y[:-1]
+    dx = x[1:] - x[:-1]
+    dt = (dx ** 2 + dy ** 2)**0.5
+    t = dt/dt.sum()
+    t = np.hstack(([0], t))
+    t = t.cumsum()
+
+    Pseudoinverse = np.linalg.pinv(BezierCoeff(t))  # (9,4) -> (4,9)
+
+    control_points = Pseudoinverse.dot(bl)  # (4,9)*(9,2) -> (4,2)
+    medi_ctp = control_points[1:-1, :]
+    return medi_ctp
+
+def convert_line(image: Image.Image, baseline, boundary, min_points: int = 8):
+    """
+    Converts a baseline to a Bezier representation and crops the input image
+    roughly around the line.
+    """
+    baseline = np.array(baseline)
+    if len(baseline) < min_points:
+        ls = LineString(baseline)
+        baseline = np.stack([np.array(ls.interpolate(x, normalized=True).coords)[0] for x in np.linspace(0, 1, 8)])
+    # get a rough environment from the bounding polygon
+    pol = Polygon(boundary).envelope
+    buff = min(np.abs(pol.bounds[0] - pol.bounds[2]), np.abs(pol.bounds[1] - pol.bounds[3]))
+    patch = clip_by_rect(pol.buffer(buff).envelope, 0, 0, image.width, image.height).bounds
+    # control points normalized to patch extents
+    curve = ((np.concatenate(([baseline[0]], bezier_fit(baseline),
+                              [baseline[-1]])) - (patch[0],
+                                                  patch[1]))/(patch[2]-patch[0],
+                                                              patch[3]-patch[1])).flatten().tolist()
+    line_im = image.crop(patch)
+    return line_im, curve
