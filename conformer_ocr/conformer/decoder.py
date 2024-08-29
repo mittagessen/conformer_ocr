@@ -20,6 +20,7 @@ from typing import Iterable, Optional
 
 from conformer_ocr.conformer.cache import DecoderCache, Cache
 from conformer_ocr.conformer.embedding import SinusoidalPositionalEmbedding
+from conformer_ocr.conformer.prompt_encoder import PromptEncoder
 
 
 class LayerNorm(nn.LayerNorm):
@@ -168,6 +169,7 @@ class TransformerDecoder(nn.Module):
                                             embedding_dim=decoder_dim)
 
         self.pos_embedding = SinusoidalPositionalEmbedding(5000, decoder_dim)
+        self.curve_embedding = PromptEncoder(decoder_dim)
 
         self.blocks: Iterable[DecoderLayer] = nn.ModuleList(
             [
@@ -183,12 +185,16 @@ class TransformerDecoder(nn.Module):
         self.max_output_len = max_output_len
 
     def forward(self,
-                tgt: Tensor,
-                memory: Tensor,
+                tgt: torch.LongTensor,
+                memory: torch.FloatTensor,
+                curves: Optional[torch.FloatTensor] = None,
                 past_key_value: Optional[DecoderCache] = None):
         """
-        tgt (`torch.LongTensor: A sequence of decoder labels with shape (N, S)
-        memory: The encoder embeddings with shape (N, W, E)
+        Args:
+            tgt: A sequence of decoder labels with shape (N, S)
+            memory: The encoder embeddings with shape (N, W, E)
+            curves: Normalized curve control points with shape (N, 4, 2)
+            past_key_value: Optional decoder cache.
         """
         past_key_value_length = past_key_value.self_attention_cache.get_seq_length() if past_key_value is not None else 0
 
@@ -197,7 +203,7 @@ class TransformerDecoder(nn.Module):
 
         x = x.to(memory.dtype)
 
-        memory = self.emb_adapter(memory)
+        memory = self.emb_adapter(memory) + self.curve_embedding(curves).unsqueeze(1).expand(-1, memory.shape[1], -1)
 
         for block in self.blocks:
             x = block(x, memory, past_key_value=past_key_value)
@@ -207,6 +213,7 @@ class TransformerDecoder(nn.Module):
     @torch.no_grad()
     def generate(self,
                  memory: torch.FloatTensor,
+                 curves: torch.FloatTensor,
                  prompt: Optional[torch.LongTensor] = None,
                  use_cache: bool = True):
         """
@@ -215,6 +222,7 @@ class TransformerDecoder(nn.Module):
 
         Args:
             memory: (N, W, E)
+            curves: curve control points for the baseline (N, 4, 2)
             prompt: Tensor of size (S) containing the decoded prefix. If None
                     the decoder initializes with the SOS token (optional)
             use_cache: Enables/disables caching
@@ -231,6 +239,7 @@ class TransformerDecoder(nn.Module):
         while len(output_tokens) < self.max_output_len:
             logits = self.forward(tgt=prompt,
                                   memory=memory,
+                                  curves=curves,
                                   past_key_value=past_key_value)
             logits = logits[:, -1, :].clone().float()  # 1, vocab_size
             new_token = logits.argmax(-1).item()

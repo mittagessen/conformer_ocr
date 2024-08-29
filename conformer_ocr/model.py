@@ -86,21 +86,7 @@ class RecognitionModel(L.LightningModule):
             torch.multiprocessing.set_sharing_strategy('file_system')
 
         logger.info(f'Creating conformer model with {num_classes} outputs')
-        #encoder = ConformerEncoder(in_channels=1,
-        #                           input_dim=height,
-        #                           encoder_dim=encoder_dim,
-        #                           num_layers=num_encoder_layers,
-        #                           num_attention_heads=num_attention_heads,
-        #                           feed_forward_expansion_factor=feed_forward_expansion_factor,
-        #                           conv_expansion_factor=conv_expansion_factor,
-        #                           input_dropout_p=input_dropout_p,
-        #                           feed_forward_dropout_p=feed_forward_dropout_p,
-        #                           attention_dropout_p=attention_dropout_p,
-        #                           conv_dropout_p=conv_dropout_p,
-        #                           conv_kernel_size=conv_kernel_size,
-        #                           half_step_residual=half_step_residual,
-        #                           subsampling_conv_channels=subsampling_conv_channels,
-        #                           subsampling_factor=subsampling_factor)
+
         encoder = Swinv2Model.from_pretrained("microsoft/swinv2-tiny-patch4-window8-256")
 
         decoder = TransformerDecoder(num_classes,
@@ -126,7 +112,7 @@ class RecognitionModel(L.LightningModule):
 
     def training_step(self, batch, batch_idx):
         try:
-            target = batch['target']
+            target, curves = batch['target'], batch['curves']
 
             encoder_outputs = self.nn['encoder'](batch['image'], interpolate_pos_encoding=True).last_hidden_state
             # shift target to the right
@@ -135,7 +121,8 @@ class RecognitionModel(L.LightningModule):
             shifted_target[:, 0] = self.hparams.sos_id
 
             logits = self.nn['decoder'](shifted_target,
-                                        encoder_outputs)  # NWC
+                                        encoder_outputs,
+                                        curves)  # NWC
 
             loss = self.criterion(logits.transpose(1, 2), target)
 
@@ -152,7 +139,7 @@ class RecognitionModel(L.LightningModule):
     def validation_step(self, batch, batch_idx):
         encoder_outputs = self.nn['encoder'](batch['image'], interpolate_pos_encoding=True).last_hidden_state
         # TODO: make batching work, implement cache
-        y_hat = self.nn['decoder'].generate(encoder_outputs)
+        y_hat = self.nn['decoder'].generate(encoder_outputs, batch['curves'])
         pred = ''.join([x[0] for x in self.trainer.datamodule.val_codec.decode([(x, 0, 0, 0) for x in y_hat])])
         decoded_target = ''.join([x[0] for x in self.trainer.datamodule.val_codec.decode([(x, 0, 0, 0) for x in batch['target'][0]])])
         self.val_cer.update(pred, decoded_target)
