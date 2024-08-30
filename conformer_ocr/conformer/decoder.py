@@ -61,9 +61,9 @@ class MultiHeadAttention(nn.Module):
         self.is_causal = is_causal
 
         self.k_proj = nn.Linear(embed_dim, embed_dim, bias=False)
-        self.v_proj = nn.Linear(embed_dim, embed_dim, bias=False)
-        self.q_proj = nn.Linear(embed_dim, embed_dim, bias=False)
-        self.out_proj = nn.Linear(embed_dim, embed_dim, bias=False)
+        self.v_proj = nn.Linear(embed_dim, embed_dim)
+        self.q_proj = nn.Linear(embed_dim, embed_dim)
+        self.out_proj = nn.Linear(embed_dim, embed_dim)
 
     def _shape(self, tensor: torch.Tensor, seq_len: int, bsz: int):
         return tensor.view(bsz, seq_len, self.num_heads, self.head_dim).transpose(1, 2).contiguous()
@@ -142,8 +142,7 @@ class DecoderLayer(nn.Module):
                 xa: Optional[Tensor] = None,
                 past_key_value: Optional[DecoderCache] = None):
         x = x + self.attn(self.attn_ln(x), past_key_value=past_key_value)
-        if self.cross_attn:
-            x = x + self.cross_attn(self.cross_attn_ln(x), xa, past_key_value=past_key_value)
+        x = x + self.cross_attn(self.cross_attn_ln(x), xa, past_key_value=past_key_value)
         x = x + self.mlp(self.mlp_ln(x))
         return x
 
