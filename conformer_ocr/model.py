@@ -165,7 +165,7 @@ class RecognitionModel(L.LightningModule):
         #logger.info(f'validation run: total chars {self.val_cer.total} errors {self.val_cer.errors} accuracy {accuracy}')
         #self.log('val_accuracy', accuracy, on_step=False, on_epoch=True, prog_bar=True, logger=True)
         #self.log('val_word_accuracy', word_accuracy, on_step=False, on_epoch=True, prog_bar=True, logger=True)
-        self.log('val_metric', self.val_mean.compute(), on_step=False, on_epoch=True, prog_bar=False, logger=True)
+        self.log('val_metric', self.val_mean.compute(), on_step=False, on_epoch=True, prog_bar=True, logger=True)
         self.val_mean.reset()
         self.log('global_step', self.global_step, on_step=False, on_epoch=True, prog_bar=False, logger=True)
 
