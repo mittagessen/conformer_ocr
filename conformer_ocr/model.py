@@ -26,6 +26,7 @@ from lightning.pytorch.utilities.memory import (garbage_collection_cuda,
                                                 is_oom_error)
 from torch.optim import lr_scheduler
 from torchmetrics.text import CharErrorRate, WordErrorRate
+from torchmetrics.aggregation import MeanMetric
 
 from transformers import Swinv2Model
 from conformer_ocr.conformer.decoder import TransformerDecoder
@@ -103,12 +104,13 @@ class RecognitionModel(L.LightningModule):
         # loss
         self.criterion = nn.CrossEntropyLoss(ignore_index=pad_id)
 
-        self.val_cer = CharErrorRate()
-        self.val_wer = WordErrorRate()
+        #self.val_cer = CharErrorRate()
+        #self.val_wer = WordErrorRate()
+        self.val_mean = MeanMetric()
 
-    def forward(self, x, seq_lens=None):
+    def forward(self, x, curves):
         encoder_outputs = self.nn['encoder'](x, interpolate_pos_encoding=True).last_hidden_state
-        return self.nn['decoder'].predict(encoder_outputs)
+        return self.nn['decoder'].generate(encoder_outputs, curves)
 
     def _step(self, batch):
         try:
@@ -149,7 +151,7 @@ class RecognitionModel(L.LightningModule):
         #self.val_wer.update(pred, decoded_target)
         loss = self._step(batch)
         if loss:
-            self.log('val_loss', loss, on_step=False, on_epoch=True, prog_bar=True, logger=True)
+            self.val_mean.update(loss)
         return loss
 
     def on_validation_epoch_end(self):
@@ -163,7 +165,8 @@ class RecognitionModel(L.LightningModule):
         #logger.info(f'validation run: total chars {self.val_cer.total} errors {self.val_cer.errors} accuracy {accuracy}')
         #self.log('val_accuracy', accuracy, on_step=False, on_epoch=True, prog_bar=True, logger=True)
         #self.log('val_word_accuracy', word_accuracy, on_step=False, on_epoch=True, prog_bar=True, logger=True)
-        #self.log('val_metric', accuracy, on_step=False, on_epoch=True, prog_bar=False, logger=True)
+        self.log('val_metric', self.val_mean.compute(), on_step=False, on_epoch=True, prog_bar=False, logger=True)
+        self.val_mean.reset()
         self.log('global_step', self.global_step, on_step=False, on_epoch=True, prog_bar=False, logger=True)
 
         #self.val_cer.reset()
