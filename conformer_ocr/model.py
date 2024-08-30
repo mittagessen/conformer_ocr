@@ -110,7 +110,7 @@ class RecognitionModel(L.LightningModule):
         encoder_outputs = self.nn['encoder'](x, interpolate_pos_encoding=True).last_hidden_state
         return self.nn['decoder'].predict(encoder_outputs)
 
-    def training_step(self, batch, batch_idx):
+    def _step(self, batch):
         try:
             target, curves = batch['target'], batch['curves']
 
@@ -125,7 +125,7 @@ class RecognitionModel(L.LightningModule):
                                         curves)  # NWC
 
             loss = self.criterion(logits.transpose(1, 2), target)
-
+            return loss
         except RuntimeError as e:
             if is_oom_error(e):
                 logger.warning('Out of memory error in trainer. Skipping batch and freeing caches.')
@@ -133,7 +133,10 @@ class RecognitionModel(L.LightningModule):
             else:
                 raise
 
-        self.log('train_loss', loss, on_step=False, on_epoch=True, prog_bar=True, logger=True)
+    def training_step(self, batch, batch_idx):
+        loss = self._step(batch)
+        if loss:
+            self.log('train_loss', loss, on_step=False, on_epoch=True, prog_bar=True, logger=True)
         return loss
 
     def validation_step(self, batch, batch_idx):
@@ -144,20 +147,9 @@ class RecognitionModel(L.LightningModule):
         #decoded_target = ''.join([x[0] for x in self.trainer.datamodule.val_codec.decode([(x, 0, 0, 0) for x in batch['target'][0]])])
         #self.val_cer.update(pred, decoded_target)
         #self.val_wer.update(pred, decoded_target)
-        target, curves = batch['target'], batch['curves']
-
-        encoder_outputs = self.nn['encoder'](batch['image'], interpolate_pos_encoding=True).last_hidden_state
-        # shift target to the right
-        shifted_target = target.new_zeros(target.shape, device=target.device)
-        shifted_target[:, 1:] = target[:, :-1].clone()
-        shifted_target[:, 0] = self.hparams.sos_id
-
-        logits = self.nn['decoder'](shifted_target,
-                                    encoder_outputs,
-                                    curves)  # NWC
-
-        loss = self.criterion(logits.transpose(1, 2), target)
-        self.log('val_loss', loss, on_step=False, on_epoch=True, prog_bar=True, logger=True)
+        loss = self._step(batch)
+        if loss:
+            self.log('val_loss', loss, on_step=False, on_epoch=True, prog_bar=True, logger=True)
         return loss
 
     def on_validation_epoch_end(self):
