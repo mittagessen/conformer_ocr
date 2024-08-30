@@ -85,7 +85,12 @@ def collate_sequences(batch):
         max_label_len = max(len(x['target']) for x in sorted_batch)
         labels = torch.stack([F.pad(x['target'], pad=(0, max_label_len-len(x['target']))) for x in sorted_batch]).long()
     label_lens = torch.LongTensor([len(x['target']) for x in sorted_batch])
-    return {'image': seqs, 'target': labels, 'seq_lens': seq_lens, 'target_lens': label_lens}
+    curves = torch.stack([x['curve'] for x in sorted_batch])
+    return {'image': seqs,
+            'target': labels,
+            'curves': curves,
+            'seq_lens': seq_lens,
+            'target_lens': label_lens}
 
 
 class TextLineDataModule(L.LightningDataModule):
@@ -413,6 +418,7 @@ def bezier_fit(bl):
     medi_ctp = control_points[1:-1, :]
     return medi_ctp
 
+
 def convert_line(image: Image.Image, baseline, boundary, min_points: int = 8):
     """
     Converts a baseline to a Bezier representation and crops the input image
@@ -430,6 +436,6 @@ def convert_line(image: Image.Image, baseline, boundary, min_points: int = 8):
     curve = ((np.concatenate(([baseline[0]], bezier_fit(baseline),
                               [baseline[-1]])) - (patch[0],
                                                   patch[1]))/(patch[2]-patch[0],
-                                                              patch[3]-patch[1])).flatten().tolist()
+                                                              patch[3]-patch[1]))
     line_im = image.crop(patch)
     return line_im, curve
