@@ -137,30 +137,45 @@ class RecognitionModel(L.LightningModule):
         return loss
 
     def validation_step(self, batch, batch_idx):
-        encoder_outputs = self.nn['encoder'](batch['image'], interpolate_pos_encoding=True).last_hidden_state
+        #encoder_outputs = self.nn['encoder'](batch['image'], interpolate_pos_encoding=True).last_hidden_state
         # TODO: make batching work, implement cache
-        y_hat = self.nn['decoder'].generate(encoder_outputs, batch['curves'])
-        pred = ''.join([x[0] for x in self.trainer.datamodule.val_codec.decode([(x, 0, 0, 0) for x in y_hat])])
-        decoded_target = ''.join([x[0] for x in self.trainer.datamodule.val_codec.decode([(x, 0, 0, 0) for x in batch['target'][0]])])
-        self.val_cer.update(pred, decoded_target)
-        self.val_wer.update(pred, decoded_target)
+        #y_hat = self.nn['decoder'].generate(encoder_outputs, batch['curves'])
+        #pred = ''.join([x[0] for x in self.trainer.datamodule.val_codec.decode([(x, 0, 0, 0) for x in y_hat])])
+        #decoded_target = ''.join([x[0] for x in self.trainer.datamodule.val_codec.decode([(x, 0, 0, 0) for x in batch['target'][0]])])
+        #self.val_cer.update(pred, decoded_target)
+        #self.val_wer.update(pred, decoded_target)
+        target, curves = batch['target'], batch['curves']
+
+        encoder_outputs = self.nn['encoder'](batch['image'], interpolate_pos_encoding=True).last_hidden_state
+        # shift target to the right
+        shifted_target = target.new_zeros(target.shape, device=target.device)
+        shifted_target[:, 1:] = target[:, :-1].clone()
+        shifted_target[:, 0] = self.hparams.sos_id
+
+        logits = self.nn['decoder'](shifted_target,
+                                    encoder_outputs,
+                                    curves)  # NWC
+
+        loss = self.criterion(logits.transpose(1, 2), target)
+        self.log('val_loss', loss, on_step=False, on_epoch=True, prog_bar=True, logger=True)
+        return loss
 
     def on_validation_epoch_end(self):
-        accuracy = 1.0 - self.val_cer.compute()
-        word_accuracy = 1.0 - self.val_wer.compute()
+        #accuracy = 1.0 - self.val_cer.compute()
+        #word_accuracy = 1.0 - self.val_wer.compute()
 
-        if accuracy > self.best_metric:
-            logger.debug(f'Updating best metric from {self.best_metric} ({self.best_epoch}) to {accuracy} ({self.current_epoch})')
-            self.best_epoch = self.current_epoch
-            self.best_metric = accuracy
-        logger.info(f'validation run: total chars {self.val_cer.total} errors {self.val_cer.errors} accuracy {accuracy}')
-        self.log('val_accuracy', accuracy, on_step=False, on_epoch=True, prog_bar=True, logger=True)
-        self.log('val_word_accuracy', word_accuracy, on_step=False, on_epoch=True, prog_bar=True, logger=True)
-        self.log('val_metric', accuracy, on_step=False, on_epoch=True, prog_bar=False, logger=True)
+        #if accuracy > self.best_metric:
+        #    logger.debug(f'Updating best metric from {self.best_metric} ({self.best_epoch}) to {accuracy} ({self.current_epoch})')
+        #    self.best_epoch = self.current_epoch
+        #    self.best_metric = accuracy
+        #logger.info(f'validation run: total chars {self.val_cer.total} errors {self.val_cer.errors} accuracy {accuracy}')
+        #self.log('val_accuracy', accuracy, on_step=False, on_epoch=True, prog_bar=True, logger=True)
+        #self.log('val_word_accuracy', word_accuracy, on_step=False, on_epoch=True, prog_bar=True, logger=True)
+        #self.log('val_metric', accuracy, on_step=False, on_epoch=True, prog_bar=False, logger=True)
         self.log('global_step', self.global_step, on_step=False, on_epoch=True, prog_bar=False, logger=True)
 
-        self.val_cer.reset()
-        self.val_wer.reset()
+        #self.val_cer.reset()
+        #self.val_wer.reset()
 
     def on_load_checkpoint(self, checkpoint: dict) -> None:
         """
