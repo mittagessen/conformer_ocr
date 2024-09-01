@@ -152,7 +152,7 @@ def avg_ckpts(ctx, output, num_checkpoints, input):
 @click.option('--warmup', show_default=True, type=int,
               default=RECOGNITION_HYPER_PARAMS['warmup'], help='Number of steps to ramp up to `lrate` initial learning rate.')
 @click.option('--freeze-backbone', show_default=True, type=int,
-              default=RECOGNITION_HYPER_PARAMS['freeze_backbone'], help='Number of samples to keep the backbone (everything but last layer) frozen.')
+              default=RECOGNITION_HYPER_PARAMS['freeze_backbone'], help='Number of samples to keep the encoder frozen.')
 @click.option('--schedule',
               show_default=True,
               type=click.Choice(['constant',
@@ -187,8 +187,6 @@ def avg_ckpts(ctx, output, num_checkpoints, input):
               help='Minimal final learning rate for cosine LR scheduler.')
 @click.option('-p', '--partition', show_default=True, default=0.9,
               help='Ground truth data partition ratio between train/validation set')
-@click.option('--fixed-splits/--ignore-fixed-split', show_default=True, default=False,
-              help='Whether to honor fixed splits in binary datasets.')
 @click.option('-u', '--normalization', show_default=True, type=click.Choice(['NFD', 'NFKD', 'NFC', 'NFKC']),
               default=RECOGNITION_HYPER_PARAMS['normalization'], help='Ground truth normalization')
 @click.option('-n', '--normalize-whitespace/--no-normalize-whitespace', show_default=True,
@@ -221,10 +219,9 @@ def avg_ckpts(ctx, output, num_checkpoints, input):
 def train(ctx, load, batch_size, pad, line_height, output, freq, quit, epochs,
           min_epochs, lag, min_delta, optimizer, lrate, momentum, weight_decay,
           warmup, freeze_backbone, schedule, gamma, step_size, sched_patience,
-          cos_max, cos_min_lr, partition, fixed_splits, normalization,
-          normalize_whitespace, codec, reorder, base_dir, training_files,
-          evaluation_files, workers, threads, format_type, augment,
-          ground_truth):
+          cos_max, cos_min_lr, partition, normalization, normalize_whitespace,
+          codec, reorder, base_dir, training_files, evaluation_files, workers,
+          threads, format_type, augment, ground_truth):
     """
     Trains a model from image-text pairs.
     """
@@ -314,7 +311,6 @@ def train(ctx, load, batch_size, pad, line_height, output, freq, quit, epochs,
                                      batch_size=batch_size,
                                      num_workers=workers,
                                      reorder=reorder,
-                                     binary_dataset_split=fixed_splits,
                                      format_type=format_type,
                                      codec=codec,
                                      normalization=hyper_params['normalization'],
