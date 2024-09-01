@@ -337,7 +337,7 @@ class BinnedBaselineDataset(Dataset):
         # sample up to max_batch_size lines and targets
         num_samples = min(self.max_batch_size, len(page_data))
         lines = [page_data[x] for x in rng.choice(len(page_data), num_samples, replace=False, shuffle=False)]
-        return collate_sequences(im, lines)
+        return collate_sequences(im.unsqueeze(0), lines)
 
     def __len__(self) -> int:
         return self._len

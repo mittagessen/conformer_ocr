@@ -117,6 +117,7 @@ class RecognitionModel(L.LightningModule):
             target, curves = batch['target'], batch['curves']
 
             encoder_outputs = self.nn['encoder'](batch['image'], interpolate_pos_encoding=True).last_hidden_state
+
             # shift target to the right
             shifted_target = target.new_zeros(target.shape, device=target.device)
             shifted_target[:, 1:] = target[:, :-1].clone()

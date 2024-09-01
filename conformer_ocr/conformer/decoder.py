@@ -191,7 +191,8 @@ class TransformerDecoder(nn.Module):
         """
         Args:
             tgt: A sequence of decoder labels with shape (N, S)
-            memory: The encoder embeddings with shape (N, W, E)
+            memory: The encoder embeddings with shape (1, W, E). The first
+                    dimension automatically gets repeated N times.
             curves: Normalized curve control points with shape (N, 4, 2)
             past_key_value: Optional decoder cache.
         """
@@ -202,7 +203,11 @@ class TransformerDecoder(nn.Module):
 
         x = x.to(memory.dtype)
 
-        memory = self.emb_adapter(memory) + self.curve_embedding(curves).unsqueeze(1).expand(-1, memory.shape[1], -1)
+        memory = self.emb_adapter(memory)
+        # repeat first dimension N times
+        memory = memory.repeat(tgt.size(1), 1, 1)
+        # add curve positional embeddings
+        memory = memory + self.curve_embedding(curves).unsqueeze(1).expand(-1, memory.size(1), -1)
 
         for block in self.blocks:
             x = block(x, memory, past_key_value=past_key_value)
