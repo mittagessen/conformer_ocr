@@ -40,11 +40,12 @@ from ctypes import c_char
 from scipy.special import comb
 from shapely.geometry import LineString
 
+from torchvision.transforms import v2
+
 from kraken.containers import Segmentation
 from kraken.lib import functional_im_transforms as F_t
 from kraken.lib.xml import XMLPage
 from kraken.lib.util import is_bitonal
-from kraken.lib.dataset import ImageInputTransforms
 from kraken.lib.dataset.recognition import DefaultAugmenter
 
 if TYPE_CHECKING:
@@ -116,7 +117,10 @@ class TextLineDataModule(L.LightningDataModule):
         else:
             raise ValueError(f'format_type {format_type} not in [alto, page, xml, binary].')
 
-        self.transforms = ImageInputTransforms(1, height, 0, 3, (pad, 0), valid_norm=False)
+        self.transforms = v2.Compose([v2.Resize(size=height-1, max_size=height),
+                                      v2.ToImage(),
+                                      v2.ToDtype(torch.float32, scale=True),
+                                      v2.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])])
 
         if evaluation_data:
             train_set = self._build_dataset(DatasetClass, training_data)
