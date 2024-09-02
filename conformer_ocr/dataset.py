@@ -280,8 +280,11 @@ class BinnedBaselineDataset(Dataset):
             curve = self._to_curve(line.baseline, im_size)
             page_data.append((text, curve))
             self.alphabet.update(text)
-        self.training_set.append((page.imagename, page_data))
-        self._len += len(page_data)
+        if len(page_data):
+            self.training_set.append((page.imagename, page_data))
+            self._len += len(page_data)
+        else:
+            logger.warning(f'Empty page {page.imagename}. Skipping.')
 
     def encode(self, codec: Optional[TransformerCodec] = None) -> None:
         """
