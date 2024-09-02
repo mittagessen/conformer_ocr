@@ -205,7 +205,7 @@ class TransformerDecoder(nn.Module):
 
         memory = self.emb_adapter(memory)
         # repeat first dimension N times
-        memory = memory.repeat(tgt.size(1), 1, 1)
+        memory = memory.repeat(tgt.size(0), 1, 1)
         # add curve positional embeddings
         memory = memory + self.curve_embedding(curves).unsqueeze(1).expand(-1, memory.size(1), -1)
 
