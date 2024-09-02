@@ -140,7 +140,7 @@ class TextLineDataModule(L.LightningDataModule):
         else:
             raise ValueError(f'format_type {format_type} not in [alto, page, xml, binary].')
 
-        self.transforms = v2.Compose([v2.Lamba(partial(optional_resize, max_size=height)),
+        self.transforms = v2.Compose([v2.Lambda(partial(optional_resize, max_size=height)),
                                       v2.ToImage(),
                                       v2.ToDtype(torch.float32, scale=True),
                                       v2.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])])
