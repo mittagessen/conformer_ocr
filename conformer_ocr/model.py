@@ -81,11 +81,6 @@ class RecognitionModel(L.LightningModule):
 
         self.save_hyperparameters()
 
-        # set multiprocessing tensor sharing strategy
-        if 'file_system' in torch.multiprocessing.get_all_sharing_strategies():
-            logger.debug('Setting multiprocessing tensor sharing strategy to file_system')
-            torch.multiprocessing.set_sharing_strategy('file_system')
-
         logger.info(f'Creating conformer model with {num_classes} outputs')
 
         encoder = Swinv2Model.from_pretrained("microsoft/swinv2-tiny-patch4-window8-256")
