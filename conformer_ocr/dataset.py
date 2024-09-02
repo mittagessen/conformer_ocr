@@ -340,7 +340,7 @@ class BinnedBaselineDataset(Dataset):
         return collate_sequences(im.unsqueeze(0), lines)
 
     def __len__(self) -> int:
-        return self._len
+        return self._len // self.max_batch_size
 
     @staticmethod
     def _to_curve(baseline, im_size, min_points: int = 8) -> torch.Tensor:
