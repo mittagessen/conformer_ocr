@@ -88,6 +88,29 @@ def collate_sequences(im, page_data):
             'target_lens': label_lens}
 
 
+def optional_resize(img: 'Image.Image', max_size: int):
+    """
+    Resizing that return images with the longest side below `max_size`
+    unchanged.
+
+    Args:
+        img: image to resize
+        max_size: maximum length of any side of the image
+    """
+    w, h = img.size
+    img_max = max(w, h)
+    if img_max > max_size:
+        if w > h:
+            h = int(h * max_size/w)
+            w = max_size
+        else:
+            w = int(w * max_size/h)
+            h = max_size
+        return img.resize((w, h))
+    else:
+        return img
+
+
 class TextLineDataModule(L.LightningDataModule):
     def __init__(self,
                  training_data: Sequence[Union[str, 'PathLike']],
@@ -117,7 +140,7 @@ class TextLineDataModule(L.LightningDataModule):
         else:
             raise ValueError(f'format_type {format_type} not in [alto, page, xml, binary].')
 
-        self.transforms = v2.Compose([v2.Resize(size=height-1, max_size=height),
+        self.transforms = v2.Compose([v2.Lamba(partial(optional_resize, max_size=height)),
                                       v2.ToImage(),
                                       v2.ToDtype(torch.float32, scale=True),
                                       v2.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])])
