@@ -218,7 +218,7 @@ class TransformerDecoder(nn.Module):
                          tgt_mask=tgt_mask,
                          tgt_is_causal=True)
 
-        return self.fc(x)
+        return self.fc(x).transpose(0, 1)
 
     @torch.no_grad()
     def generate(self,
