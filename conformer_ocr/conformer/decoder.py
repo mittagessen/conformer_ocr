@@ -199,7 +199,7 @@ class TransformerDecoder(nn.Module):
             past_key_value: Optional decoder cache.
         """
         x = self.token_embedding(tgt)
-        x = x + self.pos_embedding(tgt.size(), past_key_value_length).to(x.device)
+        x = x + self.pos_embedding(tgt.size()).to(x.device)
 
         x = x.to(memory.dtype).transpose(0, 1)
 
