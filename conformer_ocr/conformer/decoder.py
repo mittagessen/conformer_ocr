@@ -211,10 +211,13 @@ class TransformerDecoder(nn.Module):
         # add curve positional embeddings
         memory = memory + self.curve_embedding(curves).unsqueeze(1).expand(-1, memory.size(1), -1)
 
-        #for block in self.blocks:
-        #    x = block(x, memory, past_key_value=past_key_value)
-        print(f'tgt: {x.shape} memory: {memory.shape}')
-        x = self.decoder(x, memory, tgt_is_causal=True)
+        tgt_mask = nn.Transformer.generate_square_subsequent_mask(x.size(1),
+                                                                  tgt.device)
+
+        x = self.decoder(x.transpose(0, 1),
+                         memory.transpose(0, 1),
+                         tgt_mask=tgt_mask,
+                         tgt_is_causal=True)
 
         return self.fc(x)
 
