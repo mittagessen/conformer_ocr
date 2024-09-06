@@ -170,12 +170,14 @@ class TransformerDecoder(nn.Module):
         self.pos_embedding = SinusoidalPositionalEmbedding(5000, decoder_dim)
         self.curve_embedding = PromptEncoder(decoder_dim)
 
-        self.blocks: Iterable[DecoderLayer] = nn.ModuleList(
-            [
-                DecoderLayer(decoder_dim, num_decoder_heads) for _ in range(num_decoder_layers)
-            ]
-        )
-        self.ln = LayerNorm(decoder_dim)
+        #self.blocks: Iterable[DecoderLayer] = nn.ModuleList(
+        #    [
+        #        DecoderLayer(decoder_dim, num_decoder_heads) for _ in range(num_decoder_layers)
+        #    ]
+        #)
+        #self.ln = LayerNorm(decoder_dim)
+        decoder_layer = nn.TransformerDecoderLayer(d_model=decoder_dim, nhead=num_decoder_heads)
+        self.decoder = nn.TransformerDecoder(decoder_layer, num_layers=num_decoder_layers)
         self.fc = nn.Linear(decoder_dim, num_classes)
 
         self.sos_id = sos_id
@@ -209,8 +211,10 @@ class TransformerDecoder(nn.Module):
         # add curve positional embeddings
         memory = memory + self.curve_embedding(curves).unsqueeze(1).expand(-1, memory.size(1), -1)
 
-        for block in self.blocks:
-            x = block(x, memory, past_key_value=past_key_value)
+        #for block in self.blocks:
+        #    x = block(x, memory, past_key_value=past_key_value)
+        print(f'tgt: {x.shape} memory: {memory.shape}')
+        x = self.decoder(x, memory, tgt_is_causal=True)
 
         return self.fc(x)
 
