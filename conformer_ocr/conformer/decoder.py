@@ -198,24 +198,23 @@ class TransformerDecoder(nn.Module):
             curves: Normalized curve control points with shape (N, 4, 2)
             past_key_value: Optional decoder cache.
         """
-        past_key_value_length = past_key_value.self_attention_cache.get_seq_length() if past_key_value is not None else 0
-
         x = self.token_embedding(tgt)
         x = x + self.pos_embedding(tgt.size(), past_key_value_length).to(x.device)
 
-        x = x.to(memory.dtype)
+        x = x.to(memory.dtype).transpose(0, 1)
 
         memory = self.emb_adapter(memory)
         # repeat first dimension N times
         memory = memory.repeat(tgt.size(0), 1, 1)
         # add curve positional embeddings
         memory = memory + self.curve_embedding(curves).unsqueeze(1).expand(-1, memory.size(1), -1)
+        memory = memory.transpose(0, 1)
 
-        tgt_mask = nn.Transformer.generate_square_subsequent_mask(x.size(1),
+        tgt_mask = nn.Transformer.generate_square_subsequent_mask(x.size(0),
                                                                   tgt.device)
 
-        x = self.decoder(x.transpose(0, 1),
-                         memory.transpose(0, 1),
+        x = self.decoder(tgt=x,
+                         memory=memory,
                          tgt_mask=tgt_mask,
                          tgt_is_causal=True)
 
