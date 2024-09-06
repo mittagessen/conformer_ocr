@@ -84,6 +84,7 @@ class RecognitionModel(L.LightningModule):
         logger.info(f'Creating conformer model with {num_classes} outputs')
 
         encoder = Swinv2Model.from_pretrained("microsoft/swinv2-tiny-patch4-window8-256")
+        encoder.train()
 
         decoder = TransformerDecoder(num_classes,
                                      encoder_dim=encoder.config.hidden_size,
