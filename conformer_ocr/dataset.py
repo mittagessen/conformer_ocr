@@ -23,7 +23,7 @@ import lightning.pytorch as L
 from typing import (TYPE_CHECKING, Any, Callable, List, Literal, Optional,
                     Tuple, Union, Sequence)
 
-from torch.utils.data import DataLoader, Subset
+from torch.utils.data import Subset
 
 from conformer_ocr.codec import TransformerCodec
 
@@ -51,6 +51,45 @@ __all__ = ['TextLineDataModule']
 import logging
 
 logger = logging.getLogger(__name__)
+
+
+###
+# multi-epochs loader from pytorch-image-models
+# Hacked together by / Copyright 2019, Ross Wightman
+###
+class MultiEpochsDataLoader(torch.utils.data.DataLoader):
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._DataLoader__initialized = False
+        if self.batch_sampler is None:
+            self.sampler = _RepeatSampler(self.sampler)
+        else:
+            self.batch_sampler = _RepeatSampler(self.batch_sampler)
+        self._DataLoader__initialized = True
+        self.iterator = super().__iter__()
+
+    def __len__(self):
+        return len(self.sampler) if self.batch_sampler is None else len(self.batch_sampler.sampler)
+
+    def __iter__(self):
+        for i in range(len(self)):
+            yield next(self.iterator)
+
+
+class _RepeatSampler(object):
+    """ Sampler that repeats forever.
+
+    Args:
+        sampler (Sampler)
+    """
+
+    def __init__(self, sampler):
+        self.sampler = sampler
+
+    def __iter__(self):
+        while True:
+            yield from iter(self.sampler)
 
 
 def _validation_worker_init_fn(worker_id):
@@ -190,23 +229,23 @@ class TextLineDataModule(L.LightningDataModule):
         return dataset
 
     def train_dataloader(self):
-        return DataLoader(self.train_set,
-                          batch_size=1,
-                          num_workers=self.hparams.num_workers,
-                          pin_memory=True,
-                          shuffle=False,
-                          persistent_workers=True,
-                          collate_fn=collate_null)
+        return MultiEpochsDataLoader(self.train_set,
+                                     batch_size=1,
+                                     num_workers=self.hparams.num_workers,
+                                     pin_memory=True,
+                                     shuffle=False,
+                                     persistent_workers=True,
+                                     collate_fn=collate_null)
 
     def val_dataloader(self):
-        return DataLoader(self.val_set,
-                          shuffle=False,
-                          batch_size=1,
-                          num_workers=self.hparams.num_workers,
-                          pin_memory=True,
-                          collate_fn=collate_null,
-                          persistent_workers=True,
-                          worker_init_fn=_validation_worker_init_fn)
+        return MultiEpochsDataLoader(self.val_set,
+                                     shuffle=False,
+                                     batch_size=1,
+                                     num_workers=self.hparams.num_workers,
+                                     pin_memory=True,
+                                     collate_fn=collate_null,
+                                     persistent_workers=True,
+                                     worker_init_fn=_validation_worker_init_fn)
 
     def state_dict(self):
         # track whatever you want here
