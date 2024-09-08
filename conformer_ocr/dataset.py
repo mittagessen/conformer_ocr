@@ -195,6 +195,7 @@ class TextLineDataModule(L.LightningDataModule):
                           num_workers=self.hparams.num_workers,
                           pin_memory=True,
                           shuffle=False,
+                          persistent_workers=True,
                           collate_fn=collate_null)
 
     def val_dataloader(self):
@@ -204,6 +205,7 @@ class TextLineDataModule(L.LightningDataModule):
                           num_workers=self.hparams.num_workers,
                           pin_memory=True,
                           collate_fn=collate_null,
+                          persistent_workers=True,
                           worker_init_fn=_validation_worker_init_fn)
 
     def state_dict(self):
