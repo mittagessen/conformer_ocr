@@ -154,18 +154,15 @@ class TextLineDataModule(L.LightningDataModule):
         if len(self.val_set) == 0:
             raise ValueError('No valid validation data provided. Please add some.')
 
-        if not codec:
-            logger.info('Creating unified codec of train/val set alphabets.')
-            alphabet = set(self.train_set.dataset.alphabet).union(self.val_set.dataset.alphabet)
-            codec = TransformerCodec(alphabet)
-        self.codec = codec
-
         self.train_set.dataset.encode(codec)
-        self.val_set.dataset.encode(codec)
+        self.codec = self.train_set.dataset.codec
+
+        self.val_set.dataset.encode(self.codec)
 
         self.pad_id = self.codec.pad
         self.sos_id = self.codec.sos
         self.eos_id = self.codec.eos
+        self.unk_id = self.codec.unk
 
         self.num_classes = self.codec.max_label + 1
 

@@ -63,6 +63,7 @@ class TransformerCodec(object):
     pad = 0
     sos = 1
     eos = 2
+    unk = 3
 
     def __init__(self, charset: Union[Dict[str, Sequence[int]], Sequence[str], str], strict=False):
         if isinstance(charset, dict):
@@ -71,7 +72,7 @@ class TransformerCodec(object):
             cc = Counter(charset)
             if len(cc) < len(charset):
                 raise KrakenCodecException(f'Duplicate entry in codec definition string: {cc}')
-            self.c2l = {k: [v] for v, k in enumerate(sorted(charset), start=3)}
+            self.c2l = {k: [v] for v, k in enumerate(sorted(charset), start=4)}
         self.c_sorted = sorted(self.c2l.keys(), key=len, reverse=True)
         self.l2c: Dict[Tuple[int], str] = {tuple(v): k for k, v in self.c2l.items()}
         self.l2c_single = {k[0]: v for k, v in self.l2c.items() if len(k) == 1}
@@ -144,9 +145,8 @@ class TransformerCodec(object):
                 encodable_suffix = True
 
             if not encodable_suffix:
-                if self.strict:
-                    raise KrakenEncodeException(f'Non-encodable sequence {s[idx:idx+5]}... encountered.')
-                logger.warning(f'Non-encodable sequence {s[idx:idx+5]}... encountered. Advancing one code point.')
+                labels.append(self.unk)
+                logger.warning(f'Non-encodable sequence {s[idx:idx+5]}... encountered. Appending <unk> token.')
                 idx += 1
 
         labels.append(self.eos)
