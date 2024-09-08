@@ -19,7 +19,6 @@ import torch
 import torch.nn.functional as F
 import numpy as np
 import lightning.pytorch as L
-import multiprocessing as mp
 
 from typing import (TYPE_CHECKING, Any, Callable, List, Literal, Optional,
                     Tuple, Union, Sequence)
@@ -35,8 +34,6 @@ from torch.utils.data import Dataset
 
 from PIL import Image
 
-from ctypes import c_char
-
 from scipy.special import comb
 from shapely.geometry import LineString
 
@@ -45,8 +42,6 @@ from torchvision.transforms import v2
 from kraken.containers import Segmentation
 from kraken.lib import functional_im_transforms as F_t
 from kraken.lib.xml import XMLPage
-from kraken.lib.util import is_bitonal
-from kraken.lib.dataset.recognition import DefaultAugmenter
 
 if TYPE_CHECKING:
     from os import PathLike
@@ -159,22 +154,20 @@ class TextLineDataModule(L.LightningDataModule):
         if len(self.val_set) == 0:
             raise ValueError('No valid validation data provided. Please add some.')
 
+        if not codec:
+            logger.info('Creating unified codec of train/val set alphabets.')
+            alphabet = set(self.train_set.dataset.alphabet).union(self.val_set.dataset.alphabet)
+            codec = TransformerCodec(alphabet)
+        self.codec = codec
+
         self.train_set.dataset.encode(codec)
-        self.codec = self.train_set.dataset.codec
+        self.val_set.dataset.encode(codec)
+
         self.pad_id = self.codec.pad
         self.sos_id = self.codec.sos
         self.eos_id = self.codec.eos
 
-        val_diff = set(self.val_set.dataset.alphabet).difference(
-            set(self.train_set.dataset.codec.c2l.keys())
-        )
-        logger.info(f'Adding {len(val_diff)} dummy labels to validation set codec.')
-
-        val_codec = self.codec.add_labels(val_diff)
-        self.val_set.dataset.encode(val_codec)
-        self.val_codec = val_codec
-
-        self.num_classes = self.train_set.dataset.codec.max_label + 1
+        self.num_classes = self.codec.max_label + 1
 
         self.save_hyperparameters()
 
@@ -273,10 +266,7 @@ class BinnedBaselineDataset(Dataset):
                 self.text_transforms.append(partial(F_t.text_reorder, base_dir=reorder))
             else:
                 self.text_transforms.append(F_t.text_reorder)
-        if augmentation:
-            self.aug = DefaultAugmenter()
 
-        self._im_mode = mp.Value(c_char, b'1')
         self._len = 0
 
     def add(self, page: Segmentation):
@@ -348,17 +338,7 @@ class BinnedBaselineDataset(Dataset):
         if not isinstance(im, Image.Image):
             im = Image.open(im).convert('RGB')
         im = self.transforms(im)
-        if im.shape[0] == 3:
-            im_mode = b'R'
-        elif im.shape[0] == 1:
-            im_mode = b'L'
-        if is_bitonal(im):
-            im_mode = b'1'
 
-        with self._im_mode.get_lock():
-            if im_mode > self._im_mode.value:
-                logger.info(f'Upgrading "im_mode" from {self._im_mode.value} to {im_mode}')
-                self._im_mode.value = im_mode
         if self.aug:
             im = im.permute((1, 2, 0)).numpy()
             o = self.aug(image=im)
@@ -381,12 +361,6 @@ class BinnedBaselineDataset(Dataset):
         # control points normalized to patch extents
         curve = np.concatenate(([baseline[0]], bezier_fit(baseline), [baseline[-1]]))/im_size
         return torch.from_numpy(curve)
-
-    @property
-    def im_mode(self):
-        return {b'1': '1',
-                b'L': 'L',
-                b'R': 'RGB'}[self._im_mode.value]
 
 
 # magic lsq cubic bezier fit function from the internet.
