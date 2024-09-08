@@ -311,7 +311,7 @@ class BinnedBaselineDataset(Dataset):
         """
         Adds all lines on a page to the dataset.
 
-        Invalid lines will be skipped and a warning will be printed.
+        Invalid lines will be skipped.
 
         Args:
 
@@ -326,10 +326,10 @@ class BinnedBaselineDataset(Dataset):
             for func in self.text_transforms:
                 text = func(text)
             if not text and self.skip_empty_lines:
-                logger.warning(f'Text line "{line.text}" is empty after transformations')
+                logger.info(f'Text line "{line.text}" is empty after transformations')
                 continue
             if not line.baseline:
-                logger.warning('No baseline given for line')
+                logger.info('No baseline given for line')
                 continue
             # to normalized Bézier curve
             curve = self._to_curve(line.baseline, im_size)
@@ -339,7 +339,7 @@ class BinnedBaselineDataset(Dataset):
             self.training_set.append((page.imagename, page_data))
             self._len += len(page_data)
         else:
-            logger.warning(f'Empty page {page.imagename}. Skipping.')
+            logger.info(f'Empty page {page.imagename}. Skipping.')
 
     def encode(self, codec: Optional[TransformerCodec] = None) -> None:
         """
