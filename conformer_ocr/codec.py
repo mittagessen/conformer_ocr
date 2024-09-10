@@ -65,8 +65,8 @@ class ByT5Codec(object):
     tokenizer = ByT5Tokenizer(eos_token='')
     eos = tokenizer.eos_token_id
     pad = tokenizer.pad_token_id
-    # we map the unk token to sos as there should never be OOD tokens
-    sos = tokenizer.unk_token_id
+    # for T5 sos is pad token id
+    sos = tokenizer.pad_token_id
 
     def __init__(self, *args, **kwargs):
         pass
