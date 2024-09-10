@@ -68,7 +68,7 @@ class ByT5Codec(object):
     # we map the unk token to sos as there should never be OOD tokens
     sos = tokenizer.unk_token_id
 
-    def __init__(self, charset: Union[Dict[str, Sequence[int]], Sequence[str], str], strict=False):
+    def __init__(self, *args, **kwargs):
         pass
 
     def __len__(self) -> int:
