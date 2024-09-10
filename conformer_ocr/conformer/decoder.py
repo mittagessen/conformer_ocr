@@ -162,7 +162,9 @@ class TransformerDecoder(nn.Module):
         model = T5ForConditionalGeneration.from_pretrained("google/byt5-base")
 
         self.decoder = model.decoder
+        self.decoder.train()
         self.lm_head = model.lm_head
+        self.lm_head.train()
 
         if encoder_dim != self.decoder.config.d_model:
             self.emb_adapter = nn.Linear(encoder_dim, self.decoder.config.d_model)
