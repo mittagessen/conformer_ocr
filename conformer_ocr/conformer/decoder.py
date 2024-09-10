@@ -169,7 +169,7 @@ class TransformerDecoder(nn.Module):
         else:
             self.emb_adapter = nn.Identity()
 
-        self.curve_embedding = PromptEncoder(self.nn.config.d_model)
+        self.curve_embedding = PromptEncoder(self.decoder.config.d_model)
 
         self.sos_id = sos_id
         self.eos_id = eos_id
