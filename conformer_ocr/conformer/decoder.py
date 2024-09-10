@@ -16,11 +16,12 @@ import torch
 import torch.nn.functional as F
 
 from torch import Tensor, nn
-from typing import Iterable, Optional
+from typing import Optional
 
 from conformer_ocr.conformer.cache import DecoderCache, Cache
-from conformer_ocr.conformer.embedding import SinusoidalPositionalEmbedding
 from conformer_ocr.conformer.prompt_encoder import PromptEncoder
+
+from transformers import T5ForConditionalGeneration
 
 
 class LayerNorm(nn.LayerNorm):
@@ -151,7 +152,6 @@ class TransformerDecoder(nn.Module):
     def __init__(self,
                  num_classes: int,
                  encoder_dim: int = 512,
-                 decoder_dim: int = 512,
                  num_decoder_heads: int = 4,
                  num_decoder_layers: int = 4,
                  sos_id: int = -1,
@@ -159,26 +159,17 @@ class TransformerDecoder(nn.Module):
                  max_output_len: int = 1024):
         super().__init__()
 
-        if encoder_dim != decoder_dim:
-            self.emb_adapter = nn.Linear(encoder_dim, decoder_dim)
+        model = T5ForConditionalGeneration.from_pretrained("google/byt5-base")
+
+        self.decoder = model.decoder
+        self.lm_head = model.lm_head
+
+        if encoder_dim != self.decoder.config.d_model:
+            self.emb_adapter = nn.Linear(encoder_dim, self.decoder.config.d_model)
         else:
             self.emb_adapter = nn.Identity()
 
-        self.token_embedding = nn.Embedding(num_embeddings=num_classes,
-                                            embedding_dim=decoder_dim)
-
-        self.pos_embedding = SinusoidalPositionalEmbedding(5000, decoder_dim)
-        self.curve_embedding = PromptEncoder(decoder_dim)
-
-        #self.blocks: Iterable[DecoderLayer] = nn.ModuleList(
-        #    [
-        #        DecoderLayer(decoder_dim, num_decoder_heads) for _ in range(num_decoder_layers)
-        #    ]
-        #)
-        #self.ln = LayerNorm(decoder_dim)
-        decoder_layer = nn.TransformerDecoderLayer(d_model=decoder_dim, nhead=num_decoder_heads)
-        self.decoder = nn.TransformerDecoder(decoder_layer, num_layers=num_decoder_layers)
-        self.fc = nn.Linear(decoder_dim, num_classes)
+        self.curve_embedding = PromptEncoder(self.nn.config.d_model)
 
         self.sos_id = sos_id
         self.eos_id = eos_id
@@ -188,8 +179,7 @@ class TransformerDecoder(nn.Module):
     def forward(self,
                 tgt: torch.LongTensor,
                 memory: torch.FloatTensor,
-                curves: Optional[torch.FloatTensor] = None,
-                past_key_value: Optional[DecoderCache] = None):
+                curves: Optional[torch.FloatTensor] = None):
         """
         Args:
             tgt: A sequence of decoder labels with shape (N, S)
@@ -198,11 +188,6 @@ class TransformerDecoder(nn.Module):
             curves: Normalized curve control points with shape (N, 4, 2)
             past_key_value: Optional decoder cache.
         """
-        x = self.token_embedding(tgt)
-        x = x + self.pos_embedding(tgt.size()).to(x.device)
-
-        x = x.to(memory.dtype).transpose(0, 1)
-
         memory = self.emb_adapter(memory)
         # repeat first dimension N times
         memory = memory.repeat(tgt.size(0), 1, 1)
@@ -210,15 +195,16 @@ class TransformerDecoder(nn.Module):
         memory = memory + self.curve_embedding(curves).unsqueeze(1).expand(-1, memory.size(1), -1)
         memory = memory.transpose(0, 1)
 
-        tgt_mask = nn.Transformer.generate_square_subsequent_mask(x.size(0),
-                                                                  tgt.device)
+        # causal attention mask
+        attention_mask = self.decoder.get_extended_attention_mask(torch.ones(tgt.size(0),
+                                                                             tgt.size(1),
+                                                                             device=memory.device),
+                                                                  tgt.size())
 
-        x = self.decoder(tgt=x,
-                         memory=memory,
-                         tgt_mask=tgt_mask,
-                         tgt_is_causal=True)
-
-        return self.fc(x).transpose(0, 1)
+        x = self.decoder(input_ids=tgt,
+                         attention_mask=attention_mask,
+                         encoder_hidden_states=memory)
+        return self.lm_head(x).transpose(0, 1)
 
     @torch.no_grad()
     def generate(self,

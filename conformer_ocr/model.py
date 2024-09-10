@@ -69,9 +69,6 @@ class RecognitionModel(L.LightningModule):
                  cos_min_lr=1e-4,
                  warmup=15000,
                  height=96,
-                 decoder_dim=512,
-                 num_decoder_layers=4,
-                 num_decoder_heads=8,
                  **kwargs):
         super().__init__()
 
@@ -88,9 +85,6 @@ class RecognitionModel(L.LightningModule):
 
         decoder = TransformerDecoder(num_classes,
                                      encoder_dim=encoder.config.hidden_size,
-                                     decoder_dim=decoder_dim,
-                                     num_decoder_heads=num_decoder_heads,
-                                     num_decoder_layers=num_decoder_layers,
                                      sos_id=sos_id,
                                      eos_id=eos_id)
 
