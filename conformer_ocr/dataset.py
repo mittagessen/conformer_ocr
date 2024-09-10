@@ -252,7 +252,7 @@ class BinnedBaselineDataset(Dataset):
             else:
                 self.text_transforms.append(F_t.text_reorder)
 
-        self.codec = ByT5Codec(eos_token='')
+        self.codec = ByT5Codec()
 
         self._len = 0
 
