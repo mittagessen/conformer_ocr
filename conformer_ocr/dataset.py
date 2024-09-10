@@ -25,7 +25,7 @@ from typing import (TYPE_CHECKING, Any, Callable, List, Literal, Optional,
 
 from torch.utils.data import Subset
 
-from conformer_ocr.codec import TransformerCodec
+from conformer_ocr.codec import ByT5Codec
 
 from collections import Counter
 from functools import partial
@@ -116,7 +116,7 @@ class TextLineDataModule(L.LightningDataModule):
                  batch_size: int = 16,
                  num_workers: int = 8,
                  partition: Optional[float] = 0.95,
-                 codec: Optional[TransformerCodec] = None,
+                 codec: Optional[ByT5Codec] = None,
                  format_type: Literal['alto', 'page', 'xml'] = 'xml',
                  reorder: Union[bool, str] = True,
                  normalize_whitespace: bool = True,
@@ -154,15 +154,11 @@ class TextLineDataModule(L.LightningDataModule):
         if len(self.val_set) == 0:
             raise ValueError('No valid validation data provided. Please add some.')
 
-        self.train_set.dataset.encode(codec)
-        self.codec = self.train_set.dataset.codec
-
-        self.val_set.dataset.encode(self.codec)
+        self.codec = self.train_set.codec
 
         self.pad_id = self.codec.pad
         self.sos_id = self.codec.sos
         self.eos_id = self.codec.eos
-        self.unk_id = self.codec.unk
 
         self.num_classes = self.codec.max_label + 1
 
@@ -205,14 +201,6 @@ class TextLineDataModule(L.LightningDataModule):
                           pin_memory=True,
                           collate_fn=collate_null,
                           worker_init_fn=_validation_worker_init_fn)
-
-    def state_dict(self):
-        # track whatever you want here
-        return {"codec": self.codec.c2l}
-
-    def load_state_dict(self, state_dict):
-        # restore the state based on what you tracked in (def state_dict)
-        self.codec = TransformerCodec(state_dict['codec'])
 
 
 class BinnedBaselineDataset(Dataset):
@@ -264,6 +252,8 @@ class BinnedBaselineDataset(Dataset):
             else:
                 self.text_transforms.append(F_t.text_reorder)
 
+        self.codec = ByT5Codec(eos_token='')
+
         self._len = 0
 
     def add(self, page: Segmentation):
@@ -292,7 +282,7 @@ class BinnedBaselineDataset(Dataset):
                 continue
             # to normalized Bézier curve
             curve = self._to_curve(line.baseline, im_size)
-            page_data.append((text, curve))
+            page_data.append((self.codec.encode(text), curve))
             self.alphabet.update(text)
         if len(page_data):
             self.training_set.append((page.imagename, page_data))
@@ -300,23 +290,13 @@ class BinnedBaselineDataset(Dataset):
         else:
             logger.info(f'Empty page {page.imagename}. Skipping.')
 
-    def encode(self, codec: Optional[TransformerCodec] = None) -> None:
+    def encode(self, codec: Optional[ByT5Codec] = None) -> None:
         """
         Adds a codec to the dataset and encodes all text lines.
 
         Has to be run before sampling from the dataset.
         """
-        if codec:
-            self.codec = codec
-        else:
-            self.codec = TransformerCodec(''.join(self.alphabet.keys()))
-        tmp_pages = []
-        for im, page in self.training_set:
-            tmp_page = []
-            for text, curve in page:
-                tmp_page.append((self.codec.encode(text), curve))
-            tmp_pages.append((im, tmp_page))
-        self.training_set = tmp_pages
+        pass
 
     def no_encode(self) -> None:
         """
