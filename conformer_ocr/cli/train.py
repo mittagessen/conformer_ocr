@@ -363,7 +363,7 @@ def train(ctx, load, batch_size, pad, line_height, output, freq, quit, epochs,
                       enable_progress_bar=True if not ctx.meta['verbose'] else False,
                       deterministic=ctx.meta['deterministic'],
                       enable_model_summary=False,
-                      accumulate_grad_batches=2,
+                      accumulate_grad_batches=4,
                       callbacks=cbs,
                       **val_check_interval)
 
