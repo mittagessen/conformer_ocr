@@ -282,7 +282,6 @@ def train(ctx, load, batch_size, line_height, output, freq, quit, epochs,
     else:
         val_check_interval = {'val_check_interval': hyper_params['freq']}
 
-    message('Initializing dataset.')
     data_module = TextLineDataModule(training_data=ground_truth,
                                      evaluation_data=evaluation_files,
                                      height=hyper_params['height'],

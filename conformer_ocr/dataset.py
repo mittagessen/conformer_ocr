@@ -158,6 +158,7 @@ class TextLineDataModule(L.LightningDataModule):
         """
         Compiles the dataset(s) into pyarrow arrays and saves them to `self.tmpdir`
         """
+        print('Initializing dataset.')
         self._parse_data('train.arrow', self.hparams.training_data)
         self._parse_data('val.arrow', self.hparams.evaluation_data)
 
