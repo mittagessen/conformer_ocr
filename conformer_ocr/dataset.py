@@ -121,6 +121,8 @@ class TextLineDataModule(L.LightningDataModule):
 
         self.save_hyperparameters()
 
+        self.prepare_data_per_node = True
+
         self.tmpdir = tempfile.TemporaryDirectory(prefix='cocr', dir='/dev/shm')
 
         self.text_transforms: List[Callable[[str], str]] = []
