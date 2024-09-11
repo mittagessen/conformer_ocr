@@ -16,8 +16,7 @@
 Default hyperparameters
 """
 
-RECOGNITION_HYPER_PARAMS = {'pad': 0,
-                            'freq': 1.0,
+RECOGNITION_HYPER_PARAMS = {'freq': 1.0,
                             'batch_size': 32,
                             'quit': 'fixed',
                             'epochs': 100,
@@ -46,7 +45,4 @@ RECOGNITION_HYPER_PARAMS = {'pad': 0,
                             'warmup': 35000,
                             'freeze_encoder': 4000,
                             'height': 4000,
-                            'decoder_dim': 768,
-                            'num_decoder_layers': 10,
-                            'num_decoder_heads': 16,
                             }

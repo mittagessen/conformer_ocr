@@ -103,8 +103,6 @@ def avg_ckpts(ctx, output, num_checkpoints, input):
 @click.option('-i', '--load', default=None, type=click.Path(exists=True), help='Checkpoint to load')
 @click.option('-B', '--batch-size', show_default=True, type=click.INT,
               default=RECOGNITION_HYPER_PARAMS['batch_size'], help='batch sample size')
-@click.option('--pad', show_default=True, type=click.INT, default=RECOGNITION_HYPER_PARAMS['pad'], help='Left and right '
-              'padding around lines')
 @click.option('--line-height', show_default=True, type=click.INT, default=RECOGNITION_HYPER_PARAMS['height'],
               help='Input line height to network after scaling')
 @click.option('-o', '--output', show_default=True, type=click.Path(), default='model', help='Output model file')
@@ -185,14 +183,10 @@ def avg_ckpts(ctx, output, num_checkpoints, input):
               show_default=True,
               default=RECOGNITION_HYPER_PARAMS['cos_min_lr'],
               help='Minimal final learning rate for cosine LR scheduler.')
-@click.option('-p', '--partition', show_default=True, default=0.9,
-              help='Ground truth data partition ratio between train/validation set')
 @click.option('-u', '--normalization', show_default=True, type=click.Choice(['NFD', 'NFKD', 'NFC', 'NFKC']),
               default=RECOGNITION_HYPER_PARAMS['normalization'], help='Ground truth normalization')
 @click.option('-n', '--normalize-whitespace/--no-normalize-whitespace', show_default=True,
               default=RECOGNITION_HYPER_PARAMS['normalize_whitespace'], help='Normalizes unicode whitespace')
-@click.option('-c', '--codec', show_default=True, default=None, type=click.File(mode='r', lazy=True),
-              help='Load a codec JSON definition (invalid if loading existing model)')
 @click.option('--reorder/--no-reorder', show_default=True, default=True, help='Reordering of code points to display order')
 @click.option('--base-dir', show_default=True, default='auto',
               type=click.Choice(['L', 'R', 'auto']), help='Set base text '
@@ -207,21 +201,17 @@ def avg_ckpts(ctx, output, num_checkpoints, input):
               help='File(s) with paths to evaluation data. Overrides the `-p` parameter')
 @click.option('--workers', show_default=True, default=1, type=click.IntRange(1), help='Number of worker processes.')
 @click.option('--threads', show_default=True, default=1, type=click.IntRange(1), help='Maximum size of OpenMP/BLAS thread pool.')
-@click.option('-f', '--format-type', type=click.Choice(['xml', 'alto', 'page']), default='xml',
-              help='Sets the training data format. In ALTO and PageXML mode all '
-              'data is extracted from xml files containing both line definitions and a '
-              'link to source images.')
 @click.option('--augment/--no-augment',
               show_default=True,
               default=RECOGNITION_HYPER_PARAMS['augment'],
               help='Enable image augmentation')
 @click.argument('ground_truth', nargs=-1, callback=_expand_gt, type=click.Path(exists=False, dir_okay=False))
-def train(ctx, load, batch_size, pad, line_height, output, freq, quit, epochs,
+def train(ctx, load, batch_size, line_height, output, freq, quit, epochs,
           min_epochs, lag, min_delta, optimizer, lrate, momentum, weight_decay,
           warmup, freeze_encoder, schedule, gamma, step_size, sched_patience,
-          cos_max, cos_min_lr, partition, normalization, normalize_whitespace,
-          codec, reorder, base_dir, training_files, evaluation_files, workers,
-          threads, format_type, augment, ground_truth):
+          cos_max, cos_min_lr, normalization, normalize_whitespace, reorder,
+          base_dir, training_files, evaluation_files, workers, threads,
+          augment, ground_truth):
     """
     Trains a model from image-text pairs.
     """
@@ -234,7 +224,6 @@ def train(ctx, load, batch_size, pad, line_height, output, freq, quit, epochs,
         except ImportError:
             raise click.BadOptionUsage('augment', 'augmentation needs the `albumentations` package installed.')
 
-    import json
     import torch
 
     from conformer_ocr.dataset import TextLineDataModule
@@ -248,7 +237,6 @@ def train(ctx, load, batch_size, pad, line_height, output, freq, quit, epochs,
     hyper_params = RECOGNITION_HYPER_PARAMS.copy()
     hyper_params.update({'freq': freq,
                          'height': line_height,
-                         'pad': pad,
                          'batch_size': batch_size,
                          'quit': quit,
                          'epochs': epochs,
@@ -272,9 +260,6 @@ def train(ctx, load, batch_size, pad, line_height, output, freq, quit, epochs,
                          'augment': augment,
                          })
 
-    # disable automatic partition when given evaluation set explicitly
-    if evaluation_files:
-        partition = 1
     ground_truth = list(ground_truth)
 
     # merge training_files into ground_truth list
@@ -286,10 +271,6 @@ def train(ctx, load, batch_size, pad, line_height, output, freq, quit, epochs,
 
     if reorder and base_dir != 'auto':
         reorder = base_dir
-
-    if codec:
-        logger.debug(f'Loading codec file from {codec}')
-        codec = json.load(codec)
 
     try:
         accelerator, device = to_ptl_device(ctx.meta['device'])
@@ -304,15 +285,11 @@ def train(ctx, load, batch_size, pad, line_height, output, freq, quit, epochs,
     message('Initializing dataset.')
     data_module = TextLineDataModule(training_data=ground_truth,
                                      evaluation_data=evaluation_files,
-                                     pad=hyper_params['pad'],
                                      height=hyper_params['height'],
                                      augmentation=augment,
-                                     partition=partition,
                                      batch_size=batch_size,
                                      num_workers=workers,
                                      reorder=reorder,
-                                     format_type=format_type,
-                                     codec=codec,
                                      normalization=hyper_params['normalization'],
                                      normalize_whitespace=hyper_params['normalize_whitespace'])
 
