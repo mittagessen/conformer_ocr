@@ -289,7 +289,7 @@ class BinnedBaselineDataset(Dataset):
         logger.debug(f'Attempting to load {item["im"]}')
         im, page_data = item['im'], item['lines']
         if not isinstance(im, Image.Image):
-            im = Image.open(im).convert('RGB')
+            im = Image.open(im.decode('utf-8')).convert('RGB')
         im = self.transforms(im)
 
         if self.aug:
