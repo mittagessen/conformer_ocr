@@ -307,13 +307,9 @@ def train(ctx, load, batch_size, line_height, output, freq, quit, epochs,
         message('Initializing model.')
         model = RecognitionModel(**hyper_params,
                                  num_classes=data_module.num_classes,
-                                 batches_per_epoch=len(data_module.train_dataloader()),
                                  pad_id=data_module.pad_id,
                                  sos_id=data_module.sos_id,
                                  eos_id=data_module.eos_id)
-
-    if len(data_module.train_set) == 0:
-        raise click.UsageError('No valid training data was provided to the train command. Use `-t` or the `ground_truth` argument.')
 
     cbs = [RichModelSummary(max_depth=2)]
 
