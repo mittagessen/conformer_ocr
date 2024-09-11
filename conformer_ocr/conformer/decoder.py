@@ -181,7 +181,7 @@ class TransformerDecoder(nn.Module):
     def forward(self,
                 tgt: torch.LongTensor,
                 memory: torch.FloatTensor,
-                curves: Optional[torch.FloatTensor] = None):
+                curves: Optional[torch.FloatTensor] = None) -> torch.FloatTensor:
         """
         Args:
             tgt: A sequence of decoder labels with shape (N, S)
@@ -189,24 +189,18 @@ class TransformerDecoder(nn.Module):
                     dimension automatically gets repeated N times.
             curves: Normalized curve control points with shape (N, 4, 2)
             past_key_value: Optional decoder cache.
+
+        Returns:
+            Logits of shape (N, S, DE)
         """
         memory = self.emb_adapter(memory)
         # repeat first dimension N times
         memory = memory.repeat(tgt.size(0), 1, 1)
         # add curve positional embeddings
         memory = memory + self.curve_embedding(curves).unsqueeze(1).expand(-1, memory.size(1), -1)
-        memory = memory.transpose(0, 1)
 
-        # causal attention mask
-        attention_mask = self.decoder.get_extended_attention_mask(torch.ones(tgt.size(0),
-                                                                             tgt.size(1),
-                                                                             device=memory.device),
-                                                                  tgt.size())
-
-        x = self.decoder(input_ids=tgt,
-                         attention_mask=attention_mask,
-                         encoder_hidden_states=memory)
-        return self.lm_head(x).transpose(0, 1)
+        x = self.decoder(input_ids=tgt, encoder_hidden_states=memory).last_hidden_state
+        return self.lm_head(x)
 
     @torch.no_grad()
     def generate(self,
