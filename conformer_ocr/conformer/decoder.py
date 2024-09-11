@@ -159,7 +159,7 @@ class TransformerDecoder(nn.Module):
                  max_output_len: int = 1024):
         super().__init__()
 
-        model = T5ForConditionalGeneration.from_pretrained("google/byt5-base")
+        model = T5ForConditionalGeneration.from_pretrained("google/byt5-small")
 
         self.decoder = model.decoder
         self.decoder.train()
