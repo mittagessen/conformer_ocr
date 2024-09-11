@@ -169,7 +169,10 @@ class TextLineDataModule(L.LightningDataModule):
 
         ds = []
         for page in [XMLPage(file).to_container() for file in files]:
-            im_size = Image.open(page.imagename).size
+            try:
+                im_size = Image.open(page.imagename).size
+            except:
+                continue
             page_data = []
             for line in page.lines:
                 text = line.text
