@@ -29,7 +29,7 @@ from torchmetrics.text import CharErrorRate, WordErrorRate
 from torchmetrics.aggregation import MeanMetric
 
 from transformers import Swinv2Model
-from conformer_ocr.conformer.decoder import TransformerDecoder
+from conformer_ocr.decoder import T5VisionDecoderModel
 
 logger = logging.getLogger(__name__)
 
@@ -78,44 +78,26 @@ class RecognitionModel(L.LightningModule):
         logger.info(f'Creating conformer model with {num_classes} outputs')
 
         encoder = Swinv2Model.from_pretrained("microsoft/swinv2-tiny-patch4-window8-256")
-        encoder.train()
+        decoder = T5VisionDecoderModel.from_pretrained('google/byt5-small')
 
-        decoder = TransformerDecoder(num_classes,
-                                     encoder_dim=encoder.config.hidden_size,
-                                     sos_id=sos_id,
-                                     eos_id=eos_id)
+        self.nn = VisionEncoderDecoderModel(encoder=encoder, decoder=decoder)
 
-        self.nn = nn.ModuleDict({'encoder': encoder,
-                                 'decoder': decoder})
-
-        # loss
-        self.criterion = nn.CrossEntropyLoss(ignore_index=pad_id)
+        self.nn.config.decoder_start_token_id = model.config.pad_token_id
+        self.nn.train()
 
         #self.val_cer = CharErrorRate()
         #self.val_wer = WordErrorRate()
         self.val_mean = MeanMetric()
 
     def forward(self, x, curves):
-        encoder_outputs = self.nn['encoder'](x, interpolate_pos_encoding=True).last_hidden_state
-        return self.nn['decoder'].generate(encoder_outputs, curves)
+        return self.nn(pixel_values=x, decoder_curves=batch['curves'])
 
     def _step(self, batch):
         try:
-            target, curves = batch['target'], batch['curves']
-
-            encoder_outputs = self.nn['encoder'](batch['image'], interpolate_pos_encoding=True).last_hidden_state
-
-            # shift target to the right
-            shifted_target = target.new_zeros(target.shape, device=target.device)
-            shifted_target[:, 1:] = target[:, :-1].clone()
-            shifted_target[:, 0] = self.hparams.sos_id
-
-            logits = self.nn['decoder'](shifted_target,
-                                        encoder_outputs,
-                                        curves)  # NWC
-
-            loss = self.criterion(logits.transpose(1, 2), target)
-            return loss
+            output = self.nn(pixel_values=batch['image'],
+                             labels=batch['target'],
+                             decoder_curves=batch['curves'])
+            return output.loss
         except RuntimeError as e:
             if is_oom_error(e):
                 logger.warning('Out of memory error in trainer. Skipping batch and freeing caches.')
